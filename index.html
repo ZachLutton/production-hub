@@ -6,6 +6,8 @@
 <title>Zedric's Production Hub</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a1a; }
@@ -98,6 +100,10 @@
 
   .save-notice { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1B5E20; color: white; padding: 10px 24px; border-radius: 24px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 200; }
   .save-notice.show { opacity: 1; }
+  .sync-status { font-size: 10px; opacity: 0.8; margin-top: 1px; }
+  .sync-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .sync-dot.connected { background: #69F0AE; }
+  .sync-dot.disconnected { background: #FF5252; }
 
   /* Compact view */
   .compact .dish-details { display: none; }
@@ -121,6 +127,7 @@
   <div class="header-left">
     <h1>Zedric's Production Hub</h1>
     <div class="subtitle">Drag to reorder | Tap to move between days</div>
+    <div class="sync-status" id="syncStatus"><span class="sync-dot disconnected" id="syncDot"></span>Connecting...</div>
   </div>
   <div class="header-actions">
     <button class="btn btn-outline" onclick="toggleMoveMode()" id="moveModeBtn">Move Dishes</button>
@@ -203,6 +210,64 @@ const PRODUCTION_DATA = {
     ]},
   }
 };
+
+// --- Firebase Real-Time Sync ---
+const firebaseConfig = {
+  apiKey: "AIzaSyDUveUlxrNDIU4yDUpbzjv8-X625S-l0Po",
+  authDomain: "zedrics-production-hub.firebaseapp.com",
+  databaseURL: "https://zedrics-production-hub-default-rtdb.firebaseio.com",
+  projectId: "zedrics-production-hub",
+  storageBucket: "zedrics-production-hub.firebasestorage.app",
+  messagingSenderId: "1000819775934",
+  appId: "1:1000819775934:web:6a0f14f54f797b092841ef"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const dataRef = db.ref('productionData');
+let isRemoteUpdate = false;
+let syncTimeout = null;
+
+function syncToFirebase() {
+  if (isRemoteUpdate) return;
+  if (syncTimeout) clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => {
+    dataRef.set(PRODUCTION_DATA);
+  }, 300);
+}
+
+// Listen for real-time changes from other devices
+dataRef.on('value', (snapshot) => {
+  const remoteData = snapshot.val();
+  if (!remoteData) {
+    // First time: push local data to Firebase
+    dataRef.set(PRODUCTION_DATA);
+    return;
+  }
+  isRemoteUpdate = true;
+  // Update local data with remote data
+  Object.keys(PRODUCTION_DATA).forEach(k => delete PRODUCTION_DATA[k]);
+  Object.assign(PRODUCTION_DATA, remoteData);
+  // Make sure currentDay still exists
+  if (!PRODUCTION_DATA[currentDay]) {
+    currentDay = Object.keys(PRODUCTION_DATA)[0];
+  }
+  renderTabs();
+  render();
+  isRemoteUpdate = false;
+});
+
+// Connection status indicator
+db.ref('.info/connected').on('value', (snap) => {
+  const dot = document.getElementById('syncDot');
+  const status = document.getElementById('syncStatus');
+  if (snap.val() === true) {
+    dot.className = 'sync-dot connected';
+    status.innerHTML = '<span class="sync-dot connected" id="syncDot"></span>Live sync on';
+  } else {
+    dot.className = 'sync-dot disconnected';
+    status.innerHTML = '<span class="sync-dot disconnected" id="syncDot"></span>Offline';
+  }
+});
 
 const stationColors = { "Station 1": ["#1565C0","#1976D2"], "Station 2": ["#E65100","#F57C00"], "Station 3": ["#6A1B9A","#8E24AA"] };
 const stationClasses = { "Station 1": "station-1", "Station 2": "station-2", "Station 3": "station-3" };
@@ -449,11 +514,13 @@ function createDishRow(dish, idx, stationName) {
 
 function updateTime(day, station, idx, field, value) {
   PRODUCTION_DATA[day][station].dishes[idx][field] = formatTimeInput(value);
+  syncToFirebase();
   render();
 }
 
 function updateFinal(day, station, idx, value) {
   PRODUCTION_DATA[day][station].dishes[idx].finalCount = value;
+  syncToFirebase();
   render();
 }
 
@@ -461,11 +528,13 @@ function updateDishField(day, station, idx, field, value) {
   value = value.trim();
   if (field === 'instruction' && value === '(click to add)') return;
   PRODUCTION_DATA[day][station].dishes[idx][field] = value;
+  syncToFirebase();
   showSaveNotice('Updated');
 }
 
 function updateNotes(day, station, idx, value) {
   PRODUCTION_DATA[day][station].dishes[idx].notes = value;
+  syncToFirebase();
   showSaveNotice('Updated');
 }
 
@@ -539,6 +608,7 @@ function moveDishTo(targetDay, targetStation) {
   PRODUCTION_DATA[targetDay][targetStation].dishes.push(dish);
   selectedDish = null;
   currentDay = targetDay;
+  syncToFirebase();
   renderTabs();
   render();
   showSaveNotice('Dish moved to ' + targetDay);
@@ -570,6 +640,7 @@ function handleDrop(e) {
   let newIdx = e.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
   if (fromIdx < toIdx) newIdx--;
   dishes.splice(Math.max(0, newIdx), 0, item);
+  syncToFirebase();
   render();
   showSaveNotice('Order updated');
 }
@@ -613,6 +684,7 @@ function handleTouchEnd(e) {
     let newIdx = touch.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
     if (fromIdx < toIdx) newIdx--;
     dishes.splice(Math.max(0, newIdx), 0, item);
+    syncToFirebase();
     showSaveNotice('Order updated');
   }
   document.querySelectorAll('.dish-row').forEach(r => r.classList.remove('dragging','drag-over-top','drag-over-bottom'));
