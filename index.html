@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Zedric's Production Hub</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a1a; }
+
+  .header { background: linear-gradient(135deg, #1B5E20, #2E7D32); color: white; padding: 14px 20px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; justify-content: space-between; align-items: center; }
+  .header-left h1 { font-size: 20px; font-weight: 700; }
+  .header-left .subtitle { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+  .header-actions { display: flex; gap: 8px; }
+  .btn { padding: 8px 16px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-white { background: white; color: #1B5E20; }
+  .btn-white:hover { background: #E8F5E9; }
+  .btn-outline { background: transparent; color: white; border: 1.5px solid rgba(255,255,255,0.6); }
+  .btn-outline:hover { background: rgba(255,255,255,0.15); }
+
+  .controls { display: flex; gap: 8px; padding: 10px 20px; background: white; border-bottom: 1px solid #e0e0e0; overflow-x: auto; position: sticky; top: 58px; z-index: 99; align-items: center; }
+  .day-tab { padding: 7px 14px; border-radius: 20px; border: 2px solid #e0e0e0; background: white; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
+  .day-tab:hover { border-color: #2E7D32; }
+  .day-tab.active { background: #1B5E20; color: white; border-color: #1B5E20; }
+  .view-label { font-size: 12px; color: #999; margin-left: auto; padding-left: 12px; white-space: nowrap; }
+  .view-toggle { display: flex; border: 1.5px solid #ddd; border-radius: 8px; overflow: hidden; }
+  .view-btn { padding: 6px 12px; font-size: 12px; font-weight: 600; background: white; border: none; cursor: pointer; color: #666; }
+  .view-btn.active { background: #1B5E20; color: white; }
+
+  .content { padding: 12px 16px 100px; max-width: 960px; margin: 0 auto; }
+  .instructions { text-align: center; padding: 6px; font-size: 11px; color: #999; }
+
+  .station { margin-bottom: 20px; }
+  .station-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-radius: 12px 12px 0 0; color: white; font-weight: 700; font-size: 14px; }
+  .station-1 .station-header { background: #1565C0; }
+  .station-2 .station-header { background: #E65100; }
+  .station-3 .station-header { background: #6A1B9A; }
+  .station-header .pph-info { font-size: 12px; opacity: 0.9; font-weight: 500; text-align: right; }
+  .station-header .pph-live { font-size: 15px; font-weight: 700; }
+
+  .dish-list { background: white; border-radius: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; }
+
+  .dish-row { display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; cursor: grab; transition: background 0.15s; user-select: none; -webkit-user-select: none; position: relative; gap: 6px; }
+  .dish-row:active { cursor: grabbing; }
+  .dish-row:last-child { border-bottom: none; }
+  .dish-row:hover { background: #f8fdf8; }
+  .dish-row.dragging { background: #e8f5e9; opacity: 0.9; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10; }
+  .dish-row.drag-over-top { border-top: 3px solid #1B5E20; }
+  .dish-row.drag-over-bottom { border-bottom: 3px solid #1B5E20; }
+  .dish-row.move-mode { cursor: pointer; }
+  .dish-row.selected-for-move { background: #FFF9C4; border: 2px solid #F9A825; }
+
+  .drag-handle { color: #bbb; font-size: 16px; flex-shrink: 0; touch-action: none; width: 20px; text-align: center; }
+  .dish-info { flex: 1; min-width: 0; }
+  .dish-name { font-weight: 600; font-size: 13px; line-height: 1.3; }
+  .dish-details { font-size: 11px; color: #666; margin-top: 1px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .editable { cursor: text; border-bottom: 1px dashed transparent; transition: border-color 0.2s, background 0.2s; border-radius: 3px; padding: 1px 3px; margin: -1px -3px; }
+  .editable:hover { border-bottom-color: #ccc; background: #f8f8f8; }
+  .editable:focus { border-bottom-color: #1B5E20; background: #fff; outline: none; white-space: normal; overflow: visible; }
+
+  .dish-metrics { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+  .metric-box { display: flex; flex-direction: column; align-items: center; min-width: 52px; }
+  .metric-box.trays-box { min-width: 62px; }
+  .metric-label { font-size: 9px; color: #999; text-transform: uppercase; font-weight: 600; letter-spacing: 0.3px; }
+  .metric-value { font-weight: 700; font-size: 14px; color: #1B5E20; }
+  .metric-input { width: 52px; padding: 3px 4px; border: 1.5px solid #ddd; border-radius: 6px; font-size: 13px; text-align: center; font-weight: 600; font-family: inherit; }
+  .metric-input:focus { border-color: #1B5E20; outline: none; box-shadow: 0 0 0 2px rgba(27,94,32,0.15); }
+  .metric-input.time-input { width: 62px; font-size: 12px; }
+  .metric-input.notes-input { width: 90px; font-size: 11px; text-align: left; }
+  .metric-pph { font-weight: 700; font-size: 14px; color: #E65100; }
+  .metric-diff { font-size: 11px; font-weight: 600; }
+  .metric-diff.over { color: #2E7D32; }
+  .metric-diff.under { color: #C62828; }
+  .metric-diff.neutral { color: #999; }
+
+  .expand-btn { background: none; border: none; color: #bbb; font-size: 16px; cursor: pointer; padding: 2px 6px; flex-shrink: 0; }
+  .expand-btn:hover { color: #1B5E20; }
+
+  .dish-expanded { display: none; padding: 8px 12px 10px 36px; background: #fafafa; border-bottom: 1px solid #f0f0f0; font-size: 11px; color: #555; line-height: 1.5; }
+  .dish-expanded.show { display: block; }
+  .dish-expanded strong { color: #333; }
+
+  .total-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #f0f0f0; font-weight: 700; font-size: 13px; border-top: 2px solid #ddd; border-radius: 0 0 12px 12px; flex-wrap: wrap; gap: 6px; }
+  .total-bar .total-stat { display: inline-flex; align-items: center; gap: 4px; }
+  .total-bar .total-ordered { color: #1B5E20; }
+  .total-bar .total-final { color: #1565C0; }
+  .total-bar .total-pph { color: #E65100; }
+  .total-bar .total-trays { color: #6A1B9A; }
+
+  .move-banner { position: fixed; bottom: 0; left: 0; right: 0; background: #F9A825; color: #333; padding: 12px 20px; display: none; z-index: 200; box-shadow: 0 -2px 8px rgba(0,0,0,0.15); text-align: center; font-weight: 600; font-size: 14px; }
+  .move-banner.show { display: flex; justify-content: space-between; align-items: center; }
+  .move-banner .move-actions { display: flex; gap: 8px; }
+  .move-btn { padding: 8px 14px; border-radius: 8px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .move-btn-dest { background: #1B5E20; color: white; }
+  .move-btn-cancel { background: white; color: #333; border: 1px solid #ccc; }
+
+  .save-notice { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1B5E20; color: white; padding: 10px 24px; border-radius: 24px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 200; }
+  .save-notice.show { opacity: 1; }
+  .sync-status { font-size: 10px; opacity: 0.8; margin-top: 1px; }
+  .sync-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .sync-dot.connected { background: #69F0AE; }
+  .sync-dot.disconnected { background: #FF5252; }
+
+  /* History panel */
+  .history-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 300; }
+  .history-overlay.show { display: flex; justify-content: center; align-items: flex-start; padding-top: 60px; }
+  .history-panel { background: white; border-radius: 16px; width: 90%; max-width: 700px; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+  .history-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #e0e0e0; position: sticky; top: 0; background: white; border-radius: 16px 16px 0 0; }
+  .history-header h2 { font-size: 18px; color: #1B5E20; }
+  .history-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #666; padding: 4px 8px; }
+  .history-close:hover { color: #333; }
+  .history-list { padding: 12px 20px; }
+  .history-week { padding: 12px 16px; margin-bottom: 8px; border: 1.5px solid #e0e0e0; border-radius: 10px; cursor: pointer; transition: all 0.2s; }
+  .history-week:hover { border-color: #1B5E20; background: #f8fdf8; }
+  .history-week-title { font-weight: 700; font-size: 14px; color: #333; }
+  .history-week-meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .history-detail { padding: 16px 20px; }
+  .history-back { background: none; border: none; color: #1B5E20; font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 0; margin-bottom: 12px; }
+  .history-back:hover { text-decoration: underline; }
+  .history-station { margin-bottom: 16px; }
+  .history-station-name { font-weight: 700; font-size: 14px; padding: 8px 12px; border-radius: 8px; color: white; margin-bottom: 6px; }
+  .history-dish { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+  .history-dish:last-child { border-bottom: none; }
+  .history-dish-name { flex: 1; font-weight: 500; }
+  .history-dish-stats { display: flex; gap: 12px; font-size: 11px; color: #666; }
+  .history-dish-stats span { min-width: 50px; text-align: center; }
+  .history-dish-stats .stat-label { font-size: 9px; color: #999; display: block; }
+  .history-empty { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
+
+  /* Compact view */
+  .compact .dish-details { display: none; }
+  .compact .dish-row { padding: 6px 10px; }
+  .compact .metric-box { min-width: 44px; }
+
+  @media print { .header, .controls, .move-banner, .save-notice, .instructions, .header-actions { display: none !important; } .content { padding: 0; } }
+  @media (max-width: 480px) {
+    .dish-name { font-size: 12px; }
+    .metric-box { min-width: 42px; }
+    .metric-input { width: 44px; font-size: 12px; }
+    .metric-input.time-input { width: 54px; font-size: 11px; }
+    .header-actions { gap: 4px; }
+    .btn { padding: 6px 10px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <h1>Zedric's Production Hub</h1>
+    <div class="subtitle">Drag to reorder | Tap to move between days</div>
+    <div class="sync-status" id="syncStatus"><span class="sync-dot disconnected" id="syncDot"></span>Connecting...</div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-outline" onclick="toggleMoveMode()" id="moveModeBtn">Move Dishes</button>
+    <button class="btn btn-outline" onclick="openHistory()">History</button>
+    <button class="btn btn-white" onclick="exportPDF()">Export PDF</button>
+  </div>
+</div>
+
+<div class="controls" id="dayTabs">
+</div>
+
+<div class="content" id="content"></div>
+
+<div class="move-banner" id="moveBanner">
+  <span id="moveText">Select a dish to move</span>
+  <div class="move-actions" id="moveActions"></div>
+</div>
+
+<div class="save-notice" id="saveNotice">Saved</div>
+
+<div class="history-overlay" id="historyOverlay" onclick="if(event.target===this)closeHistory()">
+  <div class="history-panel">
+    <div class="history-header">
+      <h2 id="historyTitle">Production History</h2>
+      <button class="history-close" onclick="closeHistory()">&times;</button>
+    </div>
+    <div id="historyContent"></div>
+  </div>
+</div>
+
+<script>
+const PRODUCTION_DATA = {
+  "Tuesday 3/17": {
+    "Station 1": { target: 875, dishes: [
+      { name: "Chicken Madeira (4)", addIn: "Madeira Sauce", guide: "3oz green beans, 4oz chicken, 4oz potato (gray), 1oz sauce", instruction: "Mash potatoes left corner, green beans right corner, chicken opposite, top with 2oz madeira sauce", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Korean Beef BBQ Tenderloin (2)", addIn: "", guide: "4oz korean beef (white), 5oz rice w peas/carrots", instruction: "Rice left side, korean beef right side", ordered: 160, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Salisbury Steak (4)", addIn: "Madeira Sauce", guide: "3oz green beans, 4oz potato (grey), 3oz meat, 1oz sauce", instruction: "Mash potatoes left corner, green beans right corner, patty opposite, top with 2oz madeira sauce", ordered: 174, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Grilled Salmon (3)", addIn: "Salsa Verde", guide: "5oz green beans, 4oz salmon, 0.5oz salsa verde", instruction: "Green beans left, salmon right, top with 1oz salsa verde", ordered: 120, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Turkey Chorizo over Rice (3)", addIn: "", guide: "4oz rice (gray), 4oz chorizo (grey)", instruction: "Rice left, chorizo right", ordered: 120, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Southern Breakfast Bowl (3)", addIn: "", guide: "3oz bacon/egg mix (tan), 4oz hash brown (grey), 1oz sausage patty", instruction: "Eggs left, sausage center, potatoes right", ordered: 110, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# Turkey Chorizo (1)", addIn: "", guide: "8oz chorizo (teal)", instruction: "Scoop into center", ordered: 25, finalCount: "", startTime: "", stopTime: "", notes: "" },
+    ]},
+    "Station 2": { target: 860, dishes: [
+      { name: "Blackened Chicken Alfredo Penne (3)", addIn: "", guide: "6oz alfredo penne mix (teal), 4oz chicken, 3oz broccoli (tan)", instruction: "", ordered: 220, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Blackened Chicken w/ Fingerlings (3)", addIn: "Chipotle Aioli", guide: "4oz chicken, 5oz fingerling potatoes, 2oz asparagus", instruction: "", ordered: 220, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Turkey Ragu over Spaghetti Squash (2)", addIn: "", guide: "5oz squash (white), 8oz ragu (teal)", instruction: "Squash center, ragu on top", ordered: 130, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Country Sausage Breakfast Bowl (3)", addIn: "Sliced Sausage", guide: "3oz egg (tan), 3oz hash brown (grey), 2oz sausage (tan)", instruction: "Eggs left, sausage center, potatoes right", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Blueberry Protein Pancakes w/ Eggs (3)", addIn: "Syrup Cup", guide: "4oz egg (tan), x1 pancake, x1 maple syrup", instruction: "Eggs left, pancake right, syrup cup upper right", ordered: 95, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Turkey Sausage Egg & Sweet Potato Hash (3)", addIn: "", guide: "3oz eggs (blue), 1 sausage patty, 5oz sweet potato hash (grey)", instruction: "", ordered: 75, finalCount: "", startTime: "", stopTime: "", notes: "" },
+    ]},
+    "Station 3": { target: 850, dishes: [
+      { name: "Glazed Beef Meatloaf (3)", addIn: "", guide: "4oz potato (grey), 4oz corn (white/tan), 4oz meat", instruction: "Mash potatoes left, corn opposite, meatloaf right", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Green Chile Chicken Over Rice (2)", addIn: "", guide: "4oz rice (gray), 5oz GCC (grey)", instruction: "Rice center, casserole on top", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# Green Chile Chicken (1)", addIn: "", guide: "8oz GCC (teal)", instruction: "Casserole in center", ordered: 30, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Tex Mex Turkey Picadillo (1)", addIn: "", guide: "11oz picadillo (red)", instruction: "Scoop into center", ordered: 120, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Seared Beef Tenderloin (4)", addIn: "Balsamic Glaze", guide: "4oz potato (grey), 3oz mushroom (gray), 4oz meat (white), 0.2oz glaze", instruction: "Mash potatoes left, mushrooms opposite, tenderloin right, top with balsamic", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Bacon Tomato & Mushroom Omelette", addIn: "", guide: "x1 omelette, 3oz filling (tan)", instruction: "", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Beef Tenderloin Steak & Egg Scramble (3)", addIn: "", guide: "4oz beef (white), 5oz pico/egg (grey)", instruction: "Eggs left, tenderloin right", ordered: 70, finalCount: "", startTime: "", stopTime: "", notes: "" },
+    ]},
+  },
+  "Wednesday 3/18": {
+    "Station 1": { target: 800, dishes: [
+      { name: "BBQ Brisket Mac", addIn: "BBQ Sauce Cup", guide: "2oz broccoli, 4oz brisket (grey), 5oz mac and cheese", instruction: "Sauce cup top left, broccoli top right, brisket center, mac bottom", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Texas Style Turkey Chili Mac (1)", addIn: "", guide: "13oz chili mac (2 packed white scoops)", instruction: "Scoop into center", ordered: 210, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "GF Chicken ZedStrips Over Mac-N-Cheese (4)", addIn: "Honey Mustard Cup", guide: "3oz mac (tan), 3oz broccoli (white), 3oz nuggets, 1oz honey mustard", instruction: "Broccoli lower left, mac upper left, strips lower right, honey mustard upper right", ordered: 130, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Brisket Hash (3)", addIn: "", guide: "4oz brisket (gray), 5oz hash potato (grey)", instruction: "Potatoes left, brisket right", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Parmesan Crusted Chop Steak (2)", addIn: "", guide: "4oz veg (grey), 4oz meat", instruction: "Veggie mix left, patty right", ordered: 114, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Herb Chicken w/ Carrots & Broccolini (3)", addIn: "", guide: "2oz broccolini, 3oz carrots, 4oz chicken", instruction: "Chicken top right, carrots left, broccolini remaining space", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# GF Zed Strips (2)", addIn: "Honey Mustard Cup", guide: "8oz nuggets, 2oz honey mustard", instruction: "Strips center, honey mustard top right", ordered: 20, finalCount: "", startTime: "", stopTime: "", notes: "" },
+    ]},
+    "Station 2": { target: 780, dishes: [
+      { name: "Chicken & Italian Sausage Over Pasta (2)", addIn: "", guide: "6oz rotini (teal), 4oz meat (gray)", instruction: "Pasta center, meat on top", ordered: 190, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Roasted Turkey w/ Cajun Butter (3)", addIn: "Cajun Butter", guide: "4oz casserole (gray), 4oz turkey, 0.5oz butter", instruction: "Casserole left, turkey right, half-moon butter sliver", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Grilled Chicken Over Cheesy Bacon Broccoli (2)", addIn: "", guide: "6oz casserole (white), 4oz chicken", instruction: "Casserole left, chicken right", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Arroz Con Pollo (2)", addIn: "Peas & Carrots", guide: "5oz spanish rice (grey), 4oz chicken", instruction: "Rice left, chicken right, top with peas/carrots", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Bacon & Gruyere Egg Bites w/ Cauliflower Hash (2)", addIn: "", guide: "2 egg bites, 2 hashbrowns", instruction: "", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Beef Taco Skillet (2)", addIn: "Salsa Cup", guide: "10oz taco skillet (red), 1oz salsa fresca", instruction: "Scoop skillet, salsa cup top right", ordered: 75, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Texas Style Turkey Chili Bowl (1)", addIn: "", guide: "11oz chili (red)", instruction: "Scoop into center", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Dirty Rice", addIn: "", guide: "8oz rice (teal), 2oz broccoli (tan)", instruction: "", ordered: 50, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# Grilled Chicken (1)", addIn: "", guide: "x3 4oz chicken", instruction: "3 breasts in center", ordered: 40, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# Baked Chicken (1)", addIn: "", guide: "x3 4oz chicken", instruction: "3 breasts in center", ordered: 20, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# Herb Marinated Chicken (1)", addIn: "", guide: "x3 4oz chicken", instruction: "3 breasts in center", ordered: 20, finalCount: "", startTime: "", stopTime: "", notes: "" },
+    ]},
+    "Station 3": { target: 790, dishes: [
+      { name: "Chicken Enchilada Casserole (2)", addIn: "", guide: "4oz rice (gray), 5oz casserole (grey)", instruction: "Rice center, casserole on top", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Rustic Chicken Parmesan (2)", addIn: "", guide: "5oz penne (ivory), 4oz chicken", instruction: "Pasta left, chicken right", ordered: 190, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Blackened Mahi Over Cilantro Lime Rice (5)", addIn: "Lemon Wedge, Chipotle Aioli", guide: "4oz rice (gray), 2oz broccoli (white), 4oz mahi, x1 lemon, 0.5oz chipotle mayo", instruction: "Rice lower left, broccoli upper left, mahi lower right, lemon & aioli upper right", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Greek Chicken Bowl", addIn: "Tzatziki, Peasant Salad", guide: "2oz tzatziki, 2oz peasant salad, 4oz rice (tan), 3oz chicken (tan)", instruction: "Rice right, chicken left, cups on opposing sides", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Ranch Chicken w/ Mozzarella & Bacon (2)", addIn: "", guide: "6oz brussels (red), 4oz chicken", instruction: "Brussels left, chicken right", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Overnight Oats", addIn: "", guide: "6.5oz oats (white), 2oz granola, blueberries", instruction: "Scoop oats, top with blueberries, granola ramekin in corner", ordered: 40, finalCount: "", startTime: "", stopTime: "", notes: "" },
+    ]},
+  }
+};
+
+// --- Firebase Real-Time Sync ---
+const firebaseConfig = {
+  apiKey: "AIzaSyDUveUlxrNDIU4yDUpbzjv8-X625S-l0Po",
+  authDomain: "zedrics-production-hub.firebaseapp.com",
+  databaseURL: "https://zedrics-production-hub-default-rtdb.firebaseio.com",
+  projectId: "zedrics-production-hub",
+  storageBucket: "zedrics-production-hub.firebasestorage.app",
+  messagingSenderId: "1000819775934",
+  appId: "1:1000819775934:web:6a0f14f54f797b092841ef"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const dataRef = db.ref('productionData');
+let isRemoteUpdate = false;
+let syncTimeout = null;
+
+// Firebase doesn't allow "/", ".", "#", "$", "[", "]" in keys
+// Convert day labels like "Tuesday 3/17" to "Tuesday 3-17" for Firebase
+function sanitizeKeys(data) {
+  const safe = {};
+  Object.keys(data).forEach(key => {
+    const safeKey = key.replace(/\//g, '-');
+    safe[safeKey] = data[key];
+  });
+  return safe;
+}
+
+function unsanitizeKeys(data) {
+  const original = {};
+  Object.keys(data).forEach(key => {
+    const originalKey = key.replace(/-(\d{1,2})$/, '/$1');
+    original[originalKey] = data[key];
+  });
+  return original;
+}
+
+function syncToFirebase() {
+  if (isRemoteUpdate) return;
+  if (syncTimeout) clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(() => {
+    dataRef.set(sanitizeKeys(PRODUCTION_DATA));
+  }, 300);
+}
+
+// Firebase stores arrays as objects with numeric keys — this converts them back
+function fixFirebaseArrays(data) {
+  if (!data || typeof data !== 'object') return data;
+  Object.keys(data).forEach(dayKey => {
+    const day = data[dayKey];
+    if (!day || typeof day !== 'object') return;
+    Object.keys(day).forEach(stationKey => {
+      const station = day[stationKey];
+      if (!station) return;
+      // Convert dishes from object to array if needed
+      if (station.dishes && !Array.isArray(station.dishes)) {
+        station.dishes = Object.values(station.dishes);
+      }
+      // Ensure each dish has all expected fields
+      if (station.dishes) {
+        station.dishes = station.dishes.map(d => ({
+          name: d.name || '',
+          addIn: d.addIn || '',
+          guide: d.guide || '',
+          instruction: d.instruction || '',
+          ordered: parseInt(d.ordered) || 0,
+          finalCount: d.finalCount || '',
+          startTime: d.startTime || '',
+          stopTime: d.stopTime || '',
+          notes: d.notes || ''
+        }));
+      }
+    });
+  });
+  return data;
+}
+
+// Track current week to detect when a new week is loaded
+let lastKnownWeekKey = null;
+
+// Listen for real-time changes from other devices
+dataRef.on('value', (snapshot) => {
+  const remoteData = snapshot.val();
+  if (!remoteData) {
+    // First time: push local data to Firebase
+    dataRef.set(sanitizeKeys(PRODUCTION_DATA));
+    lastKnownWeekKey = Object.keys(PRODUCTION_DATA)[0] || null;
+    return;
+  }
+
+  // Unsanitize keys (convert "Tuesday 3-17" back to "Tuesday 3/17") and fix arrays
+  const unsanitized = unsanitizeKeys(remoteData);
+  const fixedData = fixFirebaseArrays(unsanitized);
+
+  // Check if this is a new week (different day labels = new case order uploaded)
+  const newFirstDay = Object.keys(fixedData)[0];
+  if (lastKnownWeekKey && newFirstDay && newFirstDay !== lastKnownWeekKey) {
+    // New week detected — the old week was already saved during the update process
+    console.log('New week detected:', newFirstDay);
+  }
+  lastKnownWeekKey = newFirstDay;
+
+  isRemoteUpdate = true;
+  // Update local data with remote data
+  Object.keys(PRODUCTION_DATA).forEach(k => delete PRODUCTION_DATA[k]);
+  Object.assign(PRODUCTION_DATA, fixedData);
+  // Make sure currentDay still exists
+  if (!PRODUCTION_DATA[currentDay]) {
+    currentDay = Object.keys(PRODUCTION_DATA)[0];
+  }
+  renderTabs();
+  render();
+  isRemoteUpdate = false;
+});
+
+// Connection status indicator
+db.ref('.info/connected').on('value', (snap) => {
+  const dot = document.getElementById('syncDot');
+  const status = document.getElementById('syncStatus');
+  if (snap.val() === true) {
+    dot.className = 'sync-dot connected';
+    status.innerHTML = '<span class="sync-dot connected" id="syncDot"></span>Live sync on';
+  } else {
+    dot.className = 'sync-dot disconnected';
+    status.innerHTML = '<span class="sync-dot disconnected" id="syncDot"></span>Offline';
+  }
+});
+
+const stationColors = { "Station 1": ["#1565C0","#1976D2"], "Station 2": ["#E65100","#F57C00"], "Station 3": ["#6A1B9A","#8E24AA"] };
+const stationClasses = { "Station 1": "station-1", "Station 2": "station-2", "Station 3": "station-3" };
+let currentDay = Object.keys(PRODUCTION_DATA)[0];
+let moveMode = false;
+let selectedDish = null; // { day, station, index }
+let compactView = false;
+
+// Drag state
+let dragItem = null;
+let dragStation = null;
+let touchCurrentItem = null;
+
+function init() {
+  renderTabs();
+  render();
+}
+
+function renderTabs() {
+  const tabsEl = document.getElementById('dayTabs');
+  tabsEl.innerHTML = '';
+  Object.keys(PRODUCTION_DATA).forEach(day => {
+    const btn = document.createElement('button');
+    btn.className = 'day-tab' + (day === currentDay ? ' active' : '');
+    btn.textContent = day;
+    btn.onclick = () => switchDay(day);
+    tabsEl.appendChild(btn);
+  });
+  // View toggle
+  const lbl = document.createElement('span');
+  lbl.className = 'view-label';
+  lbl.textContent = 'View:';
+  tabsEl.appendChild(lbl);
+  const toggle = document.createElement('div');
+  toggle.className = 'view-toggle';
+  toggle.innerHTML = `<button class="view-btn ${!compactView?'active':''}" onclick="setView(false)">Full</button><button class="view-btn ${compactView?'active':''}" onclick="setView(true)">Compact</button>`;
+  tabsEl.appendChild(toggle);
+}
+
+function setView(compact) { compactView = compact; renderTabs(); render(); }
+function switchDay(day) { currentDay = day; renderTabs(); render(); }
+
+function calcPPH(dish) {
+  if (!dish.startTime || !dish.stopTime || !dish.finalCount) return null;
+  const start = parseTime(dish.startTime);
+  const stop = parseTime(dish.stopTime);
+  if (start === null || stop === null) return null;
+  let mins = stop - start;
+  if (mins <= 0) return null;
+  return Math.round((parseInt(dish.finalCount) / mins) * 60);
+}
+
+function formatTimeInput(value) {
+  if (!value) return '';
+  value = value.trim().replace(/[^0-9:]/g, '');
+  if (value.includes(':')) return value;
+  // Auto-insert colon: 700→7:00, 830→8:30, 1030→10:30
+  if (value.length === 3) return value[0] + ':' + value.slice(1);
+  if (value.length === 4) return value.slice(0,2) + ':' + value.slice(2);
+  return value;
+}
+
+function parseTime(str) {
+  if (!str) return null;
+  str = str.trim();
+  // Support HH:MM, H:MM, HHMM
+  let h, m;
+  if (str.includes(':')) {
+    const parts = str.split(':');
+    h = parseInt(parts[0]); m = parseInt(parts[1]);
+  } else if (str.length === 3 || str.length === 4) {
+    m = parseInt(str.slice(-2));
+    h = parseInt(str.slice(0, -2));
+  } else return null;
+  if (isNaN(h) || isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+function getStationPPH(stationData) {
+  let totalPlates = 0, totalMins = 0;
+  stationData.dishes.forEach(d => {
+    if (d.startTime && d.stopTime && d.finalCount) {
+      const start = parseTime(d.startTime);
+      const stop = parseTime(d.stopTime);
+      const count = parseInt(d.finalCount);
+      if (start !== null && stop !== null && !isNaN(count) && stop > start) {
+        totalPlates += count;
+        totalMins += (stop - start);
+      }
+    }
+  });
+  if (totalMins === 0) return null;
+  return Math.round((totalPlates / totalMins) * 60);
+}
+
+function render() {
+  const el = document.getElementById('content');
+  el.innerHTML = '<div class="instructions">Drag \u2630 to reorder within a station. Use "Move Dishes" to transfer items between days. Enter start/stop times (e.g. 8:30) and final count for auto PPH.</div>';
+  const dayData = PRODUCTION_DATA[currentDay];
+
+  Object.entries(dayData).forEach(([stationName, stationData]) => {
+    const stationDiv = document.createElement('div');
+    stationDiv.className = `station ${stationClasses[stationName]} ${compactView ? 'compact' : ''}`;
+
+    const totalOrdered = stationData.dishes.reduce((s, d) => s + d.ordered, 0);
+    const totalTrays = stationData.dishes.reduce((s, d) => s + Math.ceil(d.ordered / 8), 0);
+    const totalFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
+    const livePPH = getStationPPH(stationData);
+
+    stationDiv.innerHTML = `
+      <div class="station-header">
+        <span>${stationName}</span>
+        <div class="pph-info">
+          <div>Target: ${stationData.target} PPH | ${totalOrdered} ordered | ${totalTrays} trays${totalFinal ? ` | ${totalFinal} plated` : ''}</div>
+          ${livePPH !== null ? `<div class="pph-live">Live PPH: ${livePPH}</div>` : ''}
+        </div>
+      </div>
+      <div class="dish-list" data-station="${stationName}"></div>
+    `;
+
+    const listEl = stationDiv.querySelector('.dish-list');
+    stationData.dishes.forEach((dish, idx) => {
+      const row = createDishRow(dish, idx, stationName);
+      listEl.appendChild(row);
+      const expanded = document.createElement('div');
+      expanded.className = 'dish-expanded';
+      expanded.id = `detail-${stationName.replace(/\s/g,'')}-${idx}`;
+      expanded.innerHTML = `
+        ${dish.addIn ? `<strong>Add-In:</strong> <span class="editable" contenteditable="true" spellcheck="false" onblur="updateDishField('${currentDay}','${stationName}',${idx},'addIn',this.textContent)">${dish.addIn}</span><br>` : ''}
+        <strong>Plate Guide:</strong> <span class="editable" contenteditable="true" spellcheck="false" onblur="updateDishField('${currentDay}','${stationName}',${idx},'guide',this.textContent)">${dish.guide}</span><br>
+        <strong>Instruction:</strong> <span class="editable" contenteditable="true" spellcheck="false" onblur="updateDishField('${currentDay}','${stationName}',${idx},'instruction',this.textContent)">${dish.instruction || '(click to add)'}</span>
+      `;
+      listEl.appendChild(expanded);
+    });
+
+    // Station footer with average PPH
+    const pphValues = stationData.dishes.map(d => calcPPH(d)).filter(v => v !== null);
+    const avgPPH = pphValues.length > 0 ? Math.round(pphValues.reduce((a,b) => a+b, 0) / pphValues.length) : null;
+    const totalPans = stationData.dishes.reduce((s, d) => s + Math.floor(d.ordered / 8), 0);
+    const totalRemainder = stationData.dishes.reduce((s, d) => s + (d.ordered % 8), 0);
+
+    const footer = document.createElement('div');
+    footer.className = 'total-bar';
+    footer.innerHTML = `
+      <span class="total-stat total-ordered">Total Ordered: ${totalOrdered}</span>
+      <span class="total-stat total-trays">Total Trays: ${totalTrays}</span>
+      ${totalFinal ? `<span class="total-stat total-final">Total Plated: ${totalFinal}</span>` : ''}
+      <span class="total-stat total-pph">${avgPPH !== null ? `Avg PPH: ${avgPPH}` : 'Avg PPH: --'} ${livePPH !== null ? `| Station PPH: ${livePPH}` : ''}</span>
+    `;
+    stationDiv.appendChild(footer);
+
+    el.appendChild(stationDiv);
+  });
+
+  updateMoveBanner();
+}
+
+function createDishRow(dish, idx, stationName) {
+  const row = document.createElement('div');
+  const isSelected = selectedDish && selectedDish.day === currentDay && selectedDish.station === stationName && selectedDish.index === idx;
+  row.className = 'dish-row' + (moveMode ? ' move-mode' : '') + (isSelected ? ' selected-for-move' : '');
+  row.dataset.index = idx;
+  row.dataset.station = stationName;
+
+  const pph = calcPPH(dish);
+  const diff = dish.finalCount ? parseInt(dish.finalCount) - dish.ordered : null;
+  let diffClass = 'neutral', diffText = '-';
+  if (diff !== null) {
+    if (diff > 0) { diffClass = 'over'; diffText = '+' + diff; }
+    else if (diff < 0) { diffClass = 'under'; diffText = '' + diff; }
+    else { diffClass = 'neutral'; diffText = '0'; }
+  }
+
+  const sid = stationName.replace(/\s/g, '');
+
+  row.innerHTML = `
+    <div class="drag-handle">${moveMode ? '>' : '\u2630'}</div>
+    <div class="dish-info">
+      <div class="dish-name editable" contenteditable="true" spellcheck="false"
+        onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'name',this.textContent)">${dish.name}</div>
+      <div class="dish-details editable" contenteditable="true" spellcheck="false"
+        onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'guide',this.textContent)">${dish.guide}</div>
+    </div>
+    <div class="dish-metrics">
+      <div class="metric-box">
+        <span class="metric-label">Ordered</span>
+        <span class="metric-value">${dish.ordered}</span>
+      </div>
+      <div class="metric-box trays-box">
+        <span class="metric-label">Trays</span>
+        <span class="metric-value" style="color:#6A1B9A">${Math.floor(dish.ordered / 8)}${dish.ordered % 8 ? ' + ' + (dish.ordered % 8) : ''}</span>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">Start</span>
+        <input class="metric-input time-input" type="text" placeholder="700" value="${dish.startTime}"
+          onclick="event.stopPropagation()" onblur="updateTime('${currentDay}','${stationName}',${idx},'startTime',this.value)">
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">Stop</span>
+        <input class="metric-input time-input" type="text" placeholder="830" value="${dish.stopTime}"
+          onclick="event.stopPropagation()" onblur="updateTime('${currentDay}','${stationName}',${idx},'stopTime',this.value)">
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">Final</span>
+        <input class="metric-input" type="number" placeholder="0" value="${dish.finalCount}"
+          onclick="event.stopPropagation()" onchange="updateFinal('${currentDay}','${stationName}',${idx},this.value)">
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">PPH</span>
+        <span class="metric-pph">${pph !== null ? pph : '-'}</span>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">+/-</span>
+        <span class="metric-diff ${diffClass}">${diffText}</span>
+      </div>
+      <div class="metric-box">
+        <span class="metric-label">Notes</span>
+        <input class="metric-input notes-input" type="text" placeholder="..." value="${dish.notes || ''}"
+          onclick="event.stopPropagation()" onblur="updateNotes('${currentDay}','${stationName}',${idx},this.value)">
+      </div>
+    </div>
+    <button class="expand-btn" onclick="toggleDetail('${sid}',${idx},event)">\u25B6</button>
+  `;
+
+  if (moveMode) {
+    row.onclick = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.classList.contains('expand-btn')) return;
+      selectForMove(currentDay, stationName, idx);
+    };
+  } else {
+    row.draggable = true;
+    row.addEventListener('dragstart', handleDragStart);
+    row.addEventListener('dragover', handleDragOver);
+    row.addEventListener('dragend', handleDragEnd);
+    row.addEventListener('drop', handleDrop);
+    const handle = row.querySelector('.drag-handle');
+    handle.addEventListener('touchstart', handleTouchStart, { passive: false });
+    handle.addEventListener('touchmove', handleTouchMove, { passive: false });
+    handle.addEventListener('touchend', handleTouchEnd);
+  }
+
+  return row;
+}
+
+function updateTime(day, station, idx, field, value) {
+  PRODUCTION_DATA[day][station].dishes[idx][field] = formatTimeInput(value);
+  syncToFirebase();
+  render();
+}
+
+function updateFinal(day, station, idx, value) {
+  PRODUCTION_DATA[day][station].dishes[idx].finalCount = value;
+  syncToFirebase();
+  render();
+}
+
+function updateDishField(day, station, idx, field, value) {
+  value = value.trim();
+  if (field === 'instruction' && value === '(click to add)') return;
+  PRODUCTION_DATA[day][station].dishes[idx][field] = value;
+  syncToFirebase();
+  showSaveNotice('Updated');
+}
+
+function updateNotes(day, station, idx, value) {
+  PRODUCTION_DATA[day][station].dishes[idx].notes = value;
+  syncToFirebase();
+  showSaveNotice('Updated');
+}
+
+function toggleDetail(stationId, idx, event) {
+  event.stopPropagation();
+  const el = document.getElementById(`detail-${stationId}-${idx}`);
+  const btn = event.target;
+  el.classList.toggle('show');
+  btn.textContent = el.classList.contains('show') ? '\u25BC' : '\u25B6';
+}
+
+// --- Move between days ---
+function toggleMoveMode() {
+  moveMode = !moveMode;
+  selectedDish = null;
+  document.getElementById('moveModeBtn').textContent = moveMode ? 'Cancel Move' : 'Move Dishes';
+  document.getElementById('moveModeBtn').style.background = moveMode ? '#F9A825' : '';
+  document.getElementById('moveModeBtn').style.color = moveMode ? '#333' : '';
+  document.getElementById('moveModeBtn').style.border = moveMode ? '1.5px solid #F9A825' : '';
+  render();
+}
+
+function selectForMove(day, station, idx) {
+  if (selectedDish && selectedDish.day === day && selectedDish.station === station && selectedDish.index === idx) {
+    selectedDish = null;
+  } else {
+    selectedDish = { day, station, index: idx };
+  }
+  render();
+}
+
+function updateMoveBanner() {
+  const banner = document.getElementById('moveBanner');
+  const text = document.getElementById('moveText');
+  const actions = document.getElementById('moveActions');
+
+  if (!moveMode) { banner.classList.remove('show'); return; }
+  banner.classList.add('show');
+
+  if (!selectedDish) {
+    text.textContent = 'Tap a dish to select it for moving';
+    actions.innerHTML = '';
+    return;
+  }
+
+  const dish = PRODUCTION_DATA[selectedDish.day][selectedDish.station].dishes[selectedDish.index];
+  text.textContent = `Moving: ${dish.name}`;
+
+  actions.innerHTML = '';
+  // Show buttons for all stations (same day first, then other days)
+  Object.keys(PRODUCTION_DATA).forEach(day => {
+    Object.keys(PRODUCTION_DATA[day]).forEach(station => {
+      // Skip the station the dish is already in
+      if (day === selectedDish.day && station === selectedDish.station) return;
+      const btn = document.createElement('button');
+      btn.className = 'move-btn move-btn-dest';
+      btn.textContent = `\u2192 ${day === selectedDish.day ? station : day + ' ' + station}`;
+      btn.onclick = () => moveDishTo(day, station);
+      actions.appendChild(btn);
+    });
+  });
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'move-btn move-btn-cancel';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = () => { selectedDish = null; render(); };
+  actions.appendChild(cancelBtn);
+}
+
+function moveDishTo(targetDay, targetStation) {
+  if (!selectedDish) return;
+  const dish = PRODUCTION_DATA[selectedDish.day][selectedDish.station].dishes.splice(selectedDish.index, 1)[0];
+  PRODUCTION_DATA[targetDay][targetStation].dishes.push(dish);
+  selectedDish = null;
+  currentDay = targetDay;
+  syncToFirebase();
+  renderTabs();
+  render();
+  showSaveNotice('Dish moved to ' + targetDay);
+}
+
+// --- Drag and drop (same station reorder) ---
+function handleDragStart(e) {
+  dragItem = this;
+  dragStation = this.dataset.station;
+  this.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function handleDragOver(e) {
+  e.preventDefault();
+  if (!dragItem || this === dragItem || this.dataset.station !== dragStation) return;
+  const rect = this.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+  document.querySelectorAll('.dish-row').forEach(r => r.classList.remove('drag-over-top','drag-over-bottom'));
+  this.classList.add(e.clientY < midY ? 'drag-over-top' : 'drag-over-bottom');
+}
+function handleDrop(e) {
+  e.preventDefault();
+  if (!dragItem || this === dragItem || this.dataset.station !== dragStation) return;
+  const fromIdx = parseInt(dragItem.dataset.index);
+  const toIdx = parseInt(this.dataset.index);
+  const dishes = PRODUCTION_DATA[currentDay][dragStation].dishes;
+  const rect = this.getBoundingClientRect();
+  const item = dishes.splice(fromIdx, 1)[0];
+  let newIdx = e.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
+  if (fromIdx < toIdx) newIdx--;
+  dishes.splice(Math.max(0, newIdx), 0, item);
+  syncToFirebase();
+  render();
+  showSaveNotice('Order updated');
+}
+function handleDragEnd() {
+  document.querySelectorAll('.dish-row').forEach(r => r.classList.remove('dragging','drag-over-top','drag-over-bottom'));
+  dragItem = null; dragStation = null;
+}
+
+// Touch handlers
+function handleTouchStart(e) {
+  e.preventDefault();
+  const row = e.target.closest('.dish-row');
+  if (!row) return;
+  touchCurrentItem = row;
+  dragStation = row.dataset.station;
+  row.classList.add('dragging');
+}
+function handleTouchMove(e) {
+  e.preventDefault();
+  if (!touchCurrentItem) return;
+  const touch = e.touches[0];
+  const target = document.elementFromPoint(touch.clientX, touch.clientY);
+  const targetRow = target ? target.closest('.dish-row') : null;
+  document.querySelectorAll('.dish-row').forEach(r => r.classList.remove('drag-over-top','drag-over-bottom'));
+  if (targetRow && targetRow !== touchCurrentItem && targetRow.dataset.station === dragStation) {
+    const rect = targetRow.getBoundingClientRect();
+    targetRow.classList.add(touch.clientY < rect.top + rect.height / 2 ? 'drag-over-top' : 'drag-over-bottom');
+  }
+}
+function handleTouchEnd(e) {
+  if (!touchCurrentItem) return;
+  const touch = e.changedTouches[0];
+  const target = document.elementFromPoint(touch.clientX, touch.clientY);
+  const targetRow = target ? target.closest('.dish-row') : null;
+  if (targetRow && targetRow !== touchCurrentItem && targetRow.dataset.station === dragStation) {
+    const fromIdx = parseInt(touchCurrentItem.dataset.index);
+    const toIdx = parseInt(targetRow.dataset.index);
+    const dishes = PRODUCTION_DATA[currentDay][dragStation].dishes;
+    const rect = targetRow.getBoundingClientRect();
+    const item = dishes.splice(fromIdx, 1)[0];
+    let newIdx = touch.clientY < rect.top + rect.height / 2 ? toIdx : toIdx + 1;
+    if (fromIdx < toIdx) newIdx--;
+    dishes.splice(Math.max(0, newIdx), 0, item);
+    syncToFirebase();
+    showSaveNotice('Order updated');
+  }
+  document.querySelectorAll('.dish-row').forEach(r => r.classList.remove('dragging','drag-over-top','drag-over-bottom'));
+  touchCurrentItem = null; dragStation = null;
+  render();
+}
+
+// --- PDF Export ---
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+
+  Object.keys(PRODUCTION_DATA).forEach(dayName => {
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
+    const dayData = PRODUCTION_DATA[dayName];
+    let first = true;
+
+    Object.entries(dayData).forEach(([stationName, stationData]) => {
+      if (!first) doc.addPage();
+      first = false;
+
+      const totalOrdered = stationData.dishes.reduce((s, d) => s + d.ordered, 0);
+      const totalFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
+      const livePPH = getStationPPH(stationData);
+
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${dayName} - ${stationName}`, 14, 15);
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      const pdfTotalTrays = stationData.dishes.reduce((s, d) => s + Math.ceil(d.ordered / 8), 0);
+      let subtitle = `Target: ${stationData.target} PPH  |  ${totalOrdered} ordered  |  ${pdfTotalTrays} trays`;
+      if (totalFinal) subtitle += `  |  ${totalFinal} plated`;
+      if (livePPH !== null) subtitle += `  |  Live PPH: ${livePPH}`;
+      doc.text(subtitle, 14, 22);
+
+      const headers = [['#', 'Dish', 'Plate Guide', 'Instruction', 'Ordered', 'Trays', 'Start', 'Stop', 'Final', 'PPH', '+/-', 'Notes']];
+      const rows = stationData.dishes.map((d, i) => {
+        const pph = calcPPH(d);
+        const diff = d.finalCount ? parseInt(d.finalCount) - d.ordered : null;
+        let diffStr = '-';
+        if (diff !== null) diffStr = diff > 0 ? '+' + diff : '' + diff;
+        return [
+          i + 1,
+          d.name + (d.addIn ? `\n(${d.addIn})` : ''),
+          d.guide,
+          d.instruction || '-',
+          d.ordered,
+          Math.floor(d.ordered / 8) + (d.ordered % 8 ? ' + ' + (d.ordered % 8) : ''),
+          d.startTime || '___',
+          d.stopTime || '___',
+          d.finalCount || '___',
+          pph !== null ? pph : '___',
+          diffStr,
+          d.notes || ''
+        ];
+      });
+
+      doc.autoTable({
+        head: headers,
+        body: rows,
+        startY: 26,
+        margin: { left: 14, right: 14 },
+        styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak', font: 'helvetica' },
+        headStyles: { fillColor: stationName === 'Station 1' ? [21,101,192] : stationName === 'Station 2' ? [230,81,0] : [106,27,154], textColor: 255, fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 8, halign: 'center' },
+          1: { cellWidth: 36 },
+          2: { cellWidth: 40 },
+          3: { cellWidth: 42 },
+          4: { cellWidth: 16, halign: 'center', fontStyle: 'bold' },
+          5: { cellWidth: 14, halign: 'center', fontStyle: 'bold' },
+          6: { cellWidth: 13, halign: 'center' },
+          7: { cellWidth: 13, halign: 'center' },
+          8: { cellWidth: 13, halign: 'center' },
+          9: { cellWidth: 13, halign: 'center', fontStyle: 'bold' },
+          10: { cellWidth: 13, halign: 'center' },
+          11: { cellWidth: 27 },
+        },
+        alternateRowStyles: { fillColor: [248, 248, 248] },
+      });
+
+      // Average PPH row
+      const pdfPphValues = stationData.dishes.map(d => calcPPH(d)).filter(v => v !== null);
+      const pdfAvgPPH = pdfPphValues.length > 0 ? Math.round(pdfPphValues.reduce((a,b) => a+b, 0) / pdfPphValues.length) : null;
+      const finalY = doc.lastAutoTable.finalY || 180;
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(50);
+      let summaryLine = `Total Ordered: ${totalOrdered}  |  Total Trays: ${pdfTotalTrays}`;
+      if (totalFinal) summaryLine += `  |  Total Plated: ${totalFinal}`;
+      if (pdfAvgPPH !== null) summaryLine += `  |  Avg PPH: ${pdfAvgPPH}`;
+      if (livePPH !== null) summaryLine += `  |  Station PPH: ${livePPH}`;
+      doc.text(summaryLine, 14, finalY + 8);
+
+      // Footer
+      const pageH = doc.internal.pageSize.height;
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`Zedric's Production Hub - ${dayName} - ${stationName}  |  Printed ${new Date().toLocaleDateString()}`, 14, pageH - 8);
+    });
+
+    doc.save(`Zedrics Production - ${dayName}.pdf`);
+  });
+
+  showSaveNotice('PDFs downloaded');
+}
+
+function showSaveNotice(msg) {
+  const notice = document.getElementById('saveNotice');
+  notice.textContent = msg || 'Saved';
+  notice.classList.add('show');
+  setTimeout(() => notice.classList.remove('show'), 2000);
+}
+
+// --- Weekly History ---
+const historyRef = db.ref('history');
+
+// Auto-save current week to history (called when new week data is loaded)
+function saveWeekToHistory() {
+  // Use the first day label as the week key (e.g. "Tuesday 3/17" → "2026-03-17")
+  const firstDay = Object.keys(PRODUCTION_DATA)[0];
+  if (!firstDay) return;
+  const weekKey = generateWeekKey(firstDay);
+  const snapshot = {
+    weekLabel: firstDay.replace(/^(Tuesday|Wednesday|Monday|Thursday|Friday|Saturday|Sunday)\s*/, 'Week of '),
+    savedAt: new Date().toISOString(),
+    days: Object.keys(PRODUCTION_DATA).join(' & '),
+    data: JSON.parse(JSON.stringify(sanitizeKeys(PRODUCTION_DATA)))
+  };
+  historyRef.child(weekKey).set(snapshot);
+}
+
+function generateWeekKey(dayLabel) {
+  // Extract date like "3/17" from "Tuesday 3/17"
+  const match = dayLabel.match(/(\d{1,2})\/(\d{1,2})/);
+  if (!match) return 'week-' + Date.now();
+  const month = match[1].padStart(2, '0');
+  const day = match[2].padStart(2, '0');
+  // Determine year based on current date
+  const now = new Date();
+  const year = now.getFullYear();
+  return `${year}-${month}-${day}`;
+}
+
+// Save current week snapshot (can be triggered manually or during weekly update)
+function saveCurrentWeekSnapshot() {
+  saveWeekToHistory();
+  showSaveNotice('Week saved to history');
+}
+
+function openHistory() {
+  document.getElementById('historyOverlay').classList.add('show');
+  loadHistoryList();
+}
+
+function closeHistory() {
+  document.getElementById('historyOverlay').classList.remove('show');
+}
+
+function loadHistoryList() {
+  const content = document.getElementById('historyContent');
+  const title = document.getElementById('historyTitle');
+  title.textContent = 'Production History';
+  content.innerHTML = '<div class="history-empty">Loading...</div>';
+
+  historyRef.orderByKey().once('value', (snapshot) => {
+    const history = snapshot.val();
+    if (!history) {
+      content.innerHTML = '<div class="history-empty">No history saved yet. History is automatically saved each time the weekly update is run.</div>';
+      return;
+    }
+
+    // Sort weeks newest first
+    const weeks = Object.entries(history).sort((a, b) => b[0].localeCompare(a[0]));
+
+    let html = '<div class="history-list">';
+    weeks.forEach(([key, week]) => {
+      const savedDate = week.savedAt ? new Date(week.savedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+      const totalOrdered = getTotalFromHistoryData(week.data, 'ordered');
+      const totalFinal = getTotalFromHistoryData(week.data, 'finalCount');
+      html += `
+        <div class="history-week" onclick="viewHistoryWeek('${key}')">
+          <div class="history-week-title">${week.weekLabel || key}</div>
+          <div class="history-week-meta">
+            ${week.days || ''} &bull; ${totalOrdered} ordered${totalFinal ? ` &bull; ${totalFinal} plated` : ''} &bull; Saved ${savedDate}
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+
+    // Add save current week button
+    html += '<div style="padding: 12px 20px; border-top: 1px solid #e0e0e0;"><button class="btn btn-white" style="width:100%; background:#1B5E20; color:white;" onclick="saveCurrentWeekSnapshot()">Save Current Week to History</button></div>';
+
+    content.innerHTML = html;
+  });
+}
+
+function getTotalFromHistoryData(data, field) {
+  let total = 0;
+  if (!data) return 0;
+  Object.values(data).forEach(day => {
+    if (typeof day === 'object' && day !== null) {
+      Object.values(day).forEach(station => {
+        if (station && station.dishes) {
+          station.dishes.forEach(d => {
+            const val = parseInt(d[field]) || 0;
+            total += val;
+          });
+        }
+      });
+    }
+  });
+  return total;
+}
+
+function viewHistoryWeek(weekKey) {
+  const content = document.getElementById('historyContent');
+  const title = document.getElementById('historyTitle');
+  content.innerHTML = '<div class="history-empty">Loading...</div>';
+
+  historyRef.child(weekKey).once('value', (snapshot) => {
+    const week = snapshot.val();
+    if (!week || !week.data) {
+      content.innerHTML = '<div class="history-empty">No data found for this week.</div>';
+      return;
+    }
+
+    title.textContent = week.weekLabel || weekKey;
+    const stationBgs = { 'Station 1': '#1565C0', 'Station 2': '#E65100', 'Station 3': '#6A1B9A' };
+
+    let html = '<div class="history-detail">';
+    html += '<button class="history-back" onclick="loadHistoryList()">&#8592; Back to all weeks</button>';
+
+    Object.entries(week.data).forEach(([dayName, dayData]) => {
+      html += `<h3 style="margin: 16px 0 8px; font-size: 15px; color: #333;">${dayName}</h3>`;
+
+      Object.entries(dayData).forEach(([stationName, stationData]) => {
+        if (!stationData || !stationData.dishes) return;
+        const bg = stationBgs[stationName] || '#555';
+        const stationOrdered = stationData.dishes.reduce((s, d) => s + (d.ordered || 0), 0);
+        const stationFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
+
+        html += `<div class="history-station">`;
+        html += `<div class="history-station-name" style="background:${bg}">${stationName} — ${stationOrdered} ordered${stationFinal ? `, ${stationFinal} plated` : ''}</div>`;
+
+        // Column headers
+        html += `<div class="history-dish" style="font-weight:700; font-size:11px; color:#999; border-bottom:2px solid #e0e0e0;">
+          <span class="history-dish-name">Dish</span>
+          <div class="history-dish-stats">
+            <span>Ordered</span><span>Final</span><span>+/-</span><span>PPH</span><span>Notes</span>
+          </div>
+        </div>`;
+
+        stationData.dishes.forEach(d => {
+          const final = parseInt(d.finalCount) || 0;
+          const diff = d.finalCount ? final - d.ordered : null;
+          let diffStr = '-', diffColor = '#999';
+          if (diff !== null) {
+            if (diff > 0) { diffStr = '+' + diff; diffColor = '#2E7D32'; }
+            else if (diff < 0) { diffStr = '' + diff; diffColor = '#C62828'; }
+            else { diffStr = '0'; }
+          }
+
+          // Calculate PPH
+          let pphStr = '-';
+          if (d.startTime && d.stopTime && d.finalCount) {
+            const start = parseTime(d.startTime);
+            const stop = parseTime(d.stopTime);
+            if (start !== null && stop !== null && stop > start) {
+              pphStr = '' + Math.round((final / (stop - start)) * 60);
+            }
+          }
+
+          html += `<div class="history-dish">
+            <span class="history-dish-name">${d.name}</span>
+            <div class="history-dish-stats">
+              <span>${d.ordered}</span>
+              <span>${d.finalCount || '-'}</span>
+              <span style="color:${diffColor}; font-weight:600;">${diffStr}</span>
+              <span>${pphStr}</span>
+              <span>${d.notes || '-'}</span>
+            </div>
+          </div>`;
+        });
+        html += '</div>';
+      });
+    });
+
+    html += '</div>';
+    content.innerHTML = html;
+  });
+}
+
+init();
+</script>
+</body>
+</html>
