@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a1a; }
@@ -186,7 +187,7 @@
 
 <script>
 const PRODUCTION_DATA = {
-  "Tuesday 3/17": {
+  "Tuesday 3/24": {
     "Station 1": { target: 875, dishes: [
       { name: "Chicken Madeira (4)", addIn: "Madeira Sauce", guide: "3oz green beans, 4oz chicken, 4oz potato (gray), 1oz sauce", instruction: "Mash potatoes left corner, green beans right corner, chicken opposite, top with 2oz madeira sauce", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Korean Beef BBQ Tenderloin (2)", addIn: "", guide: "4oz korean beef (white), 5oz rice w peas/carrots", instruction: "Rice left side, korean beef right side", ordered: 160, finalCount: "", startTime: "", stopTime: "", notes: "" },
@@ -197,40 +198,40 @@ const PRODUCTION_DATA = {
       { name: "1/2# Turkey Chorizo (1)", addIn: "", guide: "8oz chorizo (teal)", instruction: "Scoop into center", ordered: 25, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
     "Station 2": { target: 860, dishes: [
-      { name: "Blackened Chicken Alfredo Penne (3)", addIn: "", guide: "6oz alfredo penne mix (teal), 4oz chicken, 3oz broccoli (tan)", instruction: "", ordered: 220, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Blackened Chicken Alfredo Penne (3)", addIn: "", guide: "6oz alfredo penne mix (teal), 4oz chicken, 3oz broccoli (tan)", instruction: "", ordered: 230, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Blackened Chicken w/ Fingerlings (3)", addIn: "Chipotle Aioli", guide: "4oz chicken, 5oz fingerling potatoes, 2oz asparagus", instruction: "", ordered: 220, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Turkey Ragu over Spaghetti Squash (2)", addIn: "", guide: "5oz squash (white), 8oz ragu (teal)", instruction: "Squash center, ragu on top", ordered: 130, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Country Sausage Breakfast Bowl (3)", addIn: "Sliced Sausage", guide: "3oz egg (tan), 3oz hash brown (grey), 2oz sausage (tan)", instruction: "Eggs left, sausage center, potatoes right", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Country Sausage Breakfast Bowl (3)", addIn: "Sliced Sausage", guide: "3oz egg (tan), 3oz hash brown (grey), 2oz sausage (tan)", instruction: "Eggs left, sausage center, potatoes right", ordered: 150, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Blueberry Protein Pancakes w/ Eggs (3)", addIn: "Syrup Cup", guide: "4oz egg (tan), x1 pancake, x1 maple syrup", instruction: "Eggs left, pancake right, syrup cup upper right", ordered: 95, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Turkey Sausage Egg & Sweet Potato Hash (3)", addIn: "", guide: "3oz eggs (blue), 1 sausage patty, 5oz sweet potato hash (grey)", instruction: "", ordered: 75, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
     "Station 3": { target: 850, dishes: [
-      { name: "Glazed Beef Meatloaf (3)", addIn: "", guide: "4oz potato (grey), 4oz corn (white/tan), 4oz meat", instruction: "Mash potatoes left, corn opposite, meatloaf right", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Glazed Beef Meatloaf (3)", addIn: "", guide: "4oz potato (grey), 4oz corn (white/tan), 4oz meat", instruction: "Mash potatoes left, corn opposite, meatloaf right", ordered: 220, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Green Chile Chicken Over Rice (2)", addIn: "", guide: "4oz rice (gray), 5oz GCC (grey)", instruction: "Rice center, casserole on top", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "1/2# Green Chile Chicken (1)", addIn: "", guide: "8oz GCC (teal)", instruction: "Casserole in center", ordered: 30, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Tex Mex Turkey Picadillo (1)", addIn: "", guide: "11oz picadillo (red)", instruction: "Scoop into center", ordered: 120, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Tex Mex Turkey Picadillo (1)", addIn: "", guide: "11oz picadillo (red)", instruction: "Scoop into center", ordered: 130, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Seared Beef Tenderloin (4)", addIn: "Balsamic Glaze", guide: "4oz potato (grey), 3oz mushroom (gray), 4oz meat (white), 0.2oz glaze", instruction: "Mash potatoes left, mushrooms opposite, tenderloin right, top with balsamic", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Bacon Tomato & Mushroom Omelette", addIn: "", guide: "x1 omelette, 3oz filling (tan)", instruction: "", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Beef Tenderloin Steak & Egg Scramble (3)", addIn: "", guide: "4oz beef (white), 5oz pico/egg (grey)", instruction: "Eggs left, tenderloin right", ordered: 70, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Beef Tenderloin Steak & Egg Scramble (3)", addIn: "", guide: "4oz beef (white), 5oz pico/egg (grey)", instruction: "Eggs left, tenderloin right", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
   },
-  "Wednesday 3/18": {
+  "Wednesday 3/25": {
     "Station 1": { target: 800, dishes: [
       { name: "BBQ Brisket Mac", addIn: "BBQ Sauce Cup", guide: "2oz broccoli, 4oz brisket (grey), 5oz mac and cheese", instruction: "Sauce cup top left, broccoli top right, brisket center, mac bottom", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Texas Style Turkey Chili Mac (1)", addIn: "", guide: "13oz chili mac (2 packed white scoops)", instruction: "Scoop into center", ordered: 210, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Texas Style Turkey Chili Mac (1)", addIn: "", guide: "13oz chili mac (2 packed white scoops)", instruction: "Scoop into center", ordered: 250, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "GF Chicken ZedStrips Over Mac-N-Cheese (4)", addIn: "Honey Mustard Cup", guide: "3oz mac (tan), 3oz broccoli (white), 3oz nuggets, 1oz honey mustard", instruction: "Broccoli lower left, mac upper left, strips lower right, honey mustard upper right", ordered: 130, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Brisket Hash (3)", addIn: "", guide: "4oz brisket (gray), 5oz hash potato (grey)", instruction: "Potatoes left, brisket right", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Brisket Hash (3)", addIn: "", guide: "4oz brisket (gray), 5oz hash potato (grey)", instruction: "Potatoes left, brisket right", ordered: 120, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Parmesan Crusted Chop Steak (2)", addIn: "", guide: "4oz veg (grey), 4oz meat", instruction: "Veggie mix left, patty right", ordered: 114, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Herb Chicken w/ Carrots & Broccolini (3)", addIn: "", guide: "2oz broccolini, 3oz carrots, 4oz chicken", instruction: "Chicken top right, carrots left, broccolini remaining space", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "1/2# GF Zed Strips (2)", addIn: "Honey Mustard Cup", guide: "8oz nuggets, 2oz honey mustard", instruction: "Strips center, honey mustard top right", ordered: 20, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# GF Zed Strips (2)", addIn: "Honey Mustard Cup", guide: "8oz nuggets, 2oz honey mustard", instruction: "Strips center, honey mustard top right", ordered: 30, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
     "Station 2": { target: 780, dishes: [
-      { name: "Chicken & Italian Sausage Over Pasta (2)", addIn: "", guide: "6oz rotini (teal), 4oz meat (gray)", instruction: "Pasta center, meat on top", ordered: 190, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Chicken & Italian Sausage Over Pasta (2)", addIn: "", guide: "6oz rotini (teal), 4oz meat (gray)", instruction: "Pasta center, meat on top", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Roasted Turkey w/ Cajun Butter (3)", addIn: "Cajun Butter", guide: "4oz casserole (gray), 4oz turkey, 0.5oz butter", instruction: "Casserole left, turkey right, half-moon butter sliver", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Grilled Chicken Over Cheesy Bacon Broccoli (2)", addIn: "", guide: "6oz casserole (white), 4oz chicken", instruction: "Casserole left, chicken right", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Arroz Con Pollo (2)", addIn: "Peas & Carrots", guide: "5oz spanish rice (grey), 4oz chicken", instruction: "Rice left, chicken right, top with peas/carrots", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Bacon & Gruyere Egg Bites w/ Cauliflower Hash (2)", addIn: "", guide: "2 egg bites, 2 hashbrowns", instruction: "", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Beef Taco Skillet (2)", addIn: "Salsa Cup", guide: "10oz taco skillet (red), 1oz salsa fresca", instruction: "Scoop skillet, salsa cup top right", ordered: 75, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Beef Taco Skillet (2)", addIn: "Salsa Cup", guide: "10oz taco skillet (red), 1oz salsa fresca", instruction: "Scoop skillet, salsa cup top right", ordered: 85, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Texas Style Turkey Chili Bowl (1)", addIn: "", guide: "11oz chili (red)", instruction: "Scoop into center", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Dirty Rice", addIn: "", guide: "8oz rice (teal), 2oz broccoli (tan)", instruction: "", ordered: 50, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "1/2# Grilled Chicken (1)", addIn: "", guide: "x3 4oz chicken", instruction: "3 breasts in center", ordered: 40, finalCount: "", startTime: "", stopTime: "", notes: "" },
@@ -238,13 +239,21 @@ const PRODUCTION_DATA = {
       { name: "1/2# Herb Marinated Chicken (1)", addIn: "", guide: "x3 4oz chicken", instruction: "3 breasts in center", ordered: 20, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
     "Station 3": { target: 790, dishes: [
-      { name: "Chicken Enchilada Casserole (2)", addIn: "", guide: "4oz rice (gray), 5oz casserole (grey)", instruction: "Rice center, casserole on top", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Chicken Enchilada Casserole (2)", addIn: "", guide: "4oz rice (gray), 5oz casserole (grey)", instruction: "Rice center, casserole on top", ordered: 220, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Rustic Chicken Parmesan (2)", addIn: "", guide: "5oz penne (ivory), 4oz chicken", instruction: "Pasta left, chicken right", ordered: 190, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Blackened Mahi Over Cilantro Lime Rice (5)", addIn: "Lemon Wedge, Chipotle Aioli", guide: "4oz rice (gray), 2oz broccoli (white), 4oz mahi, x1 lemon, 0.5oz chipotle mayo", instruction: "Rice lower left, broccoli upper left, mahi lower right, lemon & aioli upper right", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Greek Chicken Bowl", addIn: "Tzatziki, Peasant Salad", guide: "2oz tzatziki, 2oz peasant salad, 4oz rice (tan), 3oz chicken (tan)", instruction: "Rice right, chicken left, cups on opposing sides", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Ranch Chicken w/ Mozzarella & Bacon (2)", addIn: "", guide: "6oz brussels (red), 4oz chicken", instruction: "Brussels left, chicken right", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Overnight Oats", addIn: "", guide: "6.5oz oats (white), 2oz granola, blueberries", instruction: "Scoop oats, top with blueberries, granola ramekin in corner", ordered: 40, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Ranch Chicken w/ Mozzarella & Bacon (2)", addIn: "", guide: "6oz brussels (red), 4oz chicken", instruction: "Brussels left, chicken right", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Overnight Oats", addIn: "", guide: "6.5oz oats (white), 2oz granola, blueberries", instruction: "Scoop oats, top with blueberries, granola ramekin in corner", ordered: 50, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
+  },
+  "Thursday 3/26": {
+    "Station 1": { target: 800, dishes: [
+      { name: "Chocolate, Pecan, & Zucchini Muffin", addIn: "", guide: "", instruction: "", ordered: 150, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Peanut Butter & Chocolate Chews", addIn: "", guide: "", instruction: "", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
+    ]},
+    "Station 2": { target: 800, dishes: [] },
+    "Station 3": { target: 800, dishes: [] },
   }
 };
 
@@ -260,9 +269,16 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+const auth = firebase.auth();
 const dataRef = db.ref('productionData');
 let isRemoteUpdate = false;
 let syncTimeout = null;
+
+// Sign in anonymously so Firebase rules can require auth
+// This is silent and automatic — users never see a login screen
+auth.signInAnonymously().catch(err => {
+  console.warn('Anonymous auth failed:', err.message);
+});
 
 // Firebase doesn't allow "/", ".", "#", "$", "[", "]" in keys
 // Convert day labels like "Tuesday 3/17" to "Tuesday 3-17" for Firebase
@@ -1055,7 +1071,7 @@ function loadHistoryList() {
   historyRef.orderByKey().once('value', (snapshot) => {
     const history = snapshot.val();
     if (!history) {
-      content.innerHTML = '<div class="history-empty">No history saved yet. History is automatically saved each time the weekly update is run.</div>';
+      content.innerHTML = '<div class="history-empty">No history saved yet.</div><div style="padding: 12px 20px; border-top: 1px solid #e0e0e0;"><button class="btn btn-white" style="width:100%; background:#1B5E20; color:white;" onclick="saveCurrentWeekSnapshot()">Save Current Week to History</button></div>';
       return;
     }
 
