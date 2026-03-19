@@ -127,9 +127,10 @@
   .history-dish { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
   .history-dish:last-child { border-bottom: none; }
   .history-dish-name { flex: 1; font-weight: 500; }
-  .history-dish-stats { display: flex; gap: 12px; font-size: 11px; color: #666; }
-  .history-dish-stats span { min-width: 50px; text-align: center; }
+  .history-dish-stats { display: flex; gap: 6px; font-size: 11px; color: #666; flex-shrink: 0; align-items: flex-start; }
+  .history-dish-stats span { min-width: 42px; text-align: right; white-space: nowrap; }
   .history-dish-stats .stat-label { font-size: 9px; color: #999; display: block; }
+  .history-dish-stats .h-notes { text-align: left; white-space: normal; word-break: break-word; min-width: 55px; max-width: 110px; }
   .history-empty { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
 
   /* Compact view */
@@ -1026,11 +1027,23 @@ function saveWeekToHistory() {
   const firstDay = Object.keys(PRODUCTION_DATA)[0];
   if (!firstDay) return;
   const weekKey = generateWeekKey(firstDay);
+  // Deep copy and pre-compute PPH for each dish so it's preserved in history
+  const snapshotData = JSON.parse(JSON.stringify(sanitizeKeys(PRODUCTION_DATA)));
+  Object.values(snapshotData).forEach(dayData => {
+    Object.values(dayData).forEach(stationData => {
+      if (stationData && Array.isArray(stationData.dishes)) {
+        stationData.dishes.forEach(d => {
+          const pph = calcPPH(d);
+          if (pph !== null) d.storedPPH = pph;
+        });
+      }
+    });
+  });
   const snapshot = {
     weekLabel: firstDay.replace(/^(Tuesday|Wednesday|Monday|Thursday|Friday|Saturday|Sunday)\s*/, 'Week of '),
     savedAt: new Date().toISOString(),
     days: Object.keys(PRODUCTION_DATA).join(' & '),
-    data: JSON.parse(JSON.stringify(sanitizeKeys(PRODUCTION_DATA)))
+    data: snapshotData
   };
   historyRef.child(weekKey).set(snapshot);
 }
@@ -1152,7 +1165,7 @@ function viewHistoryWeek(weekKey) {
         html += `<div class="history-dish" style="font-weight:700; font-size:11px; color:#999; border-bottom:2px solid #e0e0e0;">
           <span class="history-dish-name">Dish</span>
           <div class="history-dish-stats">
-            <span>Ordered</span><span>Final</span><span>+/-</span><span>PPH</span><span>Notes</span>
+            <span>Ordered</span><span>Final</span><span>+/-</span><span>PPH</span><span class="h-notes">Notes</span>
           </div>
         </div>`;
 
@@ -1166,9 +1179,11 @@ function viewHistoryWeek(weekKey) {
             else { diffStr = '0'; }
           }
 
-          // Calculate PPH
+          // Calculate PPH — use pre-stored value if available, otherwise compute from times
           let pphStr = '-';
-          if (d.startTime && d.stopTime && d.finalCount) {
+          if (d.storedPPH !== undefined && d.storedPPH !== null) {
+            pphStr = '' + d.storedPPH;
+          } else if (d.startTime && d.stopTime && d.finalCount) {
             const start = parseTime(d.startTime);
             const stop = parseTime(d.stopTime);
             if (start !== null && stop !== null && stop > start) {
@@ -1183,7 +1198,7 @@ function viewHistoryWeek(weekKey) {
               <span>${d.finalCount || '-'}</span>
               <span style="color:${diffColor}; font-weight:600;">${diffStr}</span>
               <span>${pphStr}</span>
-              <span>${d.notes || '-'}</span>
+              <span class="h-notes">${d.notes || '-'}</span>
             </div>
           </div>`;
         });
