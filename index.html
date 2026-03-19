@@ -356,7 +356,7 @@ dataRef.on('value', (snapshot) => {
   if (!remoteData) {
     // First time: push local data to Firebase
     dataRef.set(sanitizeKeys(PRODUCTION_DATA));
-    lastKnownWeekKey = Object.keys(PRODUCTION_DATA)[0] || null;
+    lastKnownWeekKey = sortedDays()[0] || null;
     return;
   }
 
@@ -378,7 +378,7 @@ dataRef.on('value', (snapshot) => {
   Object.assign(PRODUCTION_DATA, fixedData);
   // Make sure currentDay still exists
   if (!PRODUCTION_DATA[currentDay]) {
-    currentDay = Object.keys(PRODUCTION_DATA)[0];
+    currentDay = sortedDays()[0];
   }
   renderTabs();
   render();
@@ -400,7 +400,18 @@ db.ref('.info/connected').on('value', (snap) => {
 
 const stationColors = { "Station 1": ["#1565C0","#1976D2"], "Station 2": ["#E65100","#F57C00"], "Station 3": ["#6A1B9A","#8E24AA"] };
 const stationClasses = { "Station 1": "station-1", "Station 2": "station-2", "Station 3": "station-3" };
-let currentDay = Object.keys(PRODUCTION_DATA)[0];
+// Returns day keys sorted by actual calendar date (e.g. 3/24 before 3/26)
+function sortedDays() {
+  return Object.keys(PRODUCTION_DATA).sort((a, b) => {
+    const getDate = s => {
+      const m = s.match(/(\d{1,2})[\/\-](\d{1,2})/);
+      return m ? parseInt(m[1]) * 100 + parseInt(m[2]) : 0;
+    };
+    return getDate(a) - getDate(b);
+  });
+}
+
+let currentDay = sortedDays()[0];
 let moveMode = false;
 let selectedDish = null; // { day, station, index }
 let compactView = false;
@@ -418,7 +429,7 @@ function init() {
 function renderTabs() {
   const tabsEl = document.getElementById('dayTabs');
   tabsEl.innerHTML = '';
-  Object.keys(PRODUCTION_DATA).forEach(day => {
+  sortedDays().forEach(day => {
     const btn = document.createElement('button');
     btn.className = 'day-tab' + (day === currentDay ? ' active' : '');
     btn.textContent = day;
@@ -770,7 +781,7 @@ function updateMoveBanner() {
   const sameDayStations = [];
   const otherDayStations = [];
 
-  Object.keys(PRODUCTION_DATA).forEach(day => {
+  sortedDays().forEach(day => {
     Object.keys(PRODUCTION_DATA[day]).forEach(station => {
       if (day === selectedDish.day && station === selectedDish.station) return;
       if (day === selectedDish.day) {
@@ -912,7 +923,7 @@ function exportPDF() {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'letter' });
   let firstPage = true;
 
-  Object.keys(PRODUCTION_DATA).forEach(dayName => {
+  sortedDays().forEach(dayName => {
     const dayData = PRODUCTION_DATA[dayName];
 
     Object.entries(dayData).forEach(([stationName, stationData]) => {
@@ -1005,7 +1016,7 @@ function exportPDF() {
   });
 
   // Get first day name for file title
-  const firstDay = Object.keys(PRODUCTION_DATA)[0] || 'Production';
+  const firstDay = sortedDays()[0] || 'Production';
   const weekLabel = firstDay.replace(/^(Tuesday|Wednesday)\s*/, 'Week ');
   doc.save(`Zedrics Production - ${weekLabel}.pdf`);
   showSaveNotice('PDF downloaded');
@@ -1024,7 +1035,7 @@ const historyRef = db.ref('history');
 // Auto-save current week to history (called when new week data is loaded)
 function saveWeekToHistory() {
   // Use the first day label as the week key (e.g. "Tuesday 3/17" → "2026-03-17")
-  const firstDay = Object.keys(PRODUCTION_DATA)[0];
+  const firstDay = sortedDays()[0];
   if (!firstDay) return;
   const weekKey = generateWeekKey(firstDay);
   // Deep copy and pre-compute PPH for each dish so it's preserved in history
@@ -1042,7 +1053,7 @@ function saveWeekToHistory() {
   const snapshot = {
     weekLabel: firstDay.replace(/^(Tuesday|Wednesday|Monday|Thursday|Friday|Saturday|Sunday)\s*/, 'Week of '),
     savedAt: new Date().toISOString(),
-    days: Object.keys(PRODUCTION_DATA).join(' & '),
+    days: sortedDays().join(' & '),
     data: snapshotData
   };
   historyRef.child(weekKey).set(snapshot);
