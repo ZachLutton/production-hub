@@ -124,13 +124,13 @@
   .history-back:hover { text-decoration: underline; }
   .history-station { margin-bottom: 16px; }
   .history-station-name { font-weight: 700; font-size: 14px; padding: 8px 12px; border-radius: 8px; color: white; margin-bottom: 6px; }
-  .history-dish { display: flex; justify-content: space-between; padding: 6px 12px; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
-  .history-dish:last-child { border-bottom: none; }
-  .history-dish-name { flex: 1; font-weight: 500; }
-  .history-dish-stats { display: flex; gap: 6px; font-size: 11px; color: #666; flex-shrink: 0; align-items: flex-start; }
-  .history-dish-stats span { min-width: 42px; text-align: right; white-space: nowrap; }
-  .history-dish-stats .stat-label { font-size: 9px; color: #999; display: block; }
-  .history-dish-stats .h-notes { text-align: left; white-space: normal; word-break: break-word; min-width: 55px; max-width: 110px; }
+  .history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .history-table th { font-weight: 700; font-size: 11px; color: #999; padding: 6px 8px; text-align: right; border-bottom: 2px solid #e0e0e0; white-space: nowrap; }
+  .history-table th:first-child { text-align: left; padding-left: 12px; }
+  .history-table td { padding: 5px 8px; text-align: right; border-bottom: 1px solid #f0f0f0; vertical-align: top; color: #444; }
+  .history-table td:first-child { text-align: left; padding-left: 12px; font-weight: 500; color: #222; }
+  .history-table .notes-col { text-align: left; color: #666; font-size: 11px; max-width: 120px; word-break: break-word; }
+  .history-table tbody tr:last-child td { border-bottom: none; }
   .history-empty { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
 
   /* Compact view */
@@ -1160,7 +1160,10 @@ function viewHistoryWeek(weekKey) {
     let html = '<div class="history-detail">';
     html += '<button class="history-back" onclick="loadHistoryList()">&#8592; Back to all weeks</button>';
 
-    Object.entries(week.data).forEach(([dayName, dayData]) => {
+    Object.entries(week.data).sort((a, b) => {
+      const getDate = s => { const m = s.match(/(\d{1,2})[\/\-](\d{1,2})/); return m ? parseInt(m[1])*100+parseInt(m[2]) : 0; };
+      return getDate(a[0]) - getDate(b[0]);
+    }).forEach(([dayName, dayData]) => {
       html += `<h3 style="margin: 16px 0 8px; font-size: 15px; color: #333;">${dayName}</h3>`;
 
       Object.entries(dayData).forEach(([stationName, stationData]) => {
@@ -1171,49 +1174,42 @@ function viewHistoryWeek(weekKey) {
 
         html += `<div class="history-station">`;
         html += `<div class="history-station-name" style="background:${bg}">${stationName} — ${stationOrdered} ordered${stationFinal ? `, ${stationFinal} plated` : ''}</div>`;
-
-        // Column headers
-        html += `<div class="history-dish" style="font-weight:700; font-size:11px; color:#999; border-bottom:2px solid #e0e0e0;">
-          <span class="history-dish-name">Dish</span>
-          <div class="history-dish-stats">
-            <span>Ordered</span><span>Final</span><span>+/-</span><span>PPH</span><span class="h-notes">Notes</span>
-          </div>
-        </div>`;
+        html += `<table class="history-table"><thead><tr>
+          <th>Dish</th><th>Ordered</th><th>Final</th><th>+/-</th><th>PPH</th><th class="notes-col">Notes</th>
+        </tr></thead><tbody>`;
 
         stationData.dishes.forEach(d => {
           const final = parseInt(d.finalCount) || 0;
           const diff = d.finalCount ? final - d.ordered : null;
-          let diffStr = '-', diffColor = '#999';
+          let diffStr = '-', diffColor = 'inherit';
           if (diff !== null) {
             if (diff > 0) { diffStr = '+' + diff; diffColor = '#2E7D32'; }
             else if (diff < 0) { diffStr = '' + diff; diffColor = '#C62828'; }
-            else { diffStr = '0'; }
+            else { diffStr = '0'; diffColor = '#999'; }
           }
 
           // Calculate PPH — use pre-stored value if available, otherwise compute from times
           let pphStr = '-';
-          if (d.storedPPH !== undefined && d.storedPPH !== null) {
+          if (d.storedPPH !== undefined && d.storedPPH !== null && d.storedPPH !== '') {
             pphStr = '' + d.storedPPH;
           } else if (d.startTime && d.stopTime && d.finalCount) {
-            const start = parseTime(d.startTime);
-            const stop = parseTime(d.stopTime);
-            if (start !== null && stop !== null && stop > start) {
-              pphStr = '' + Math.round((final / (stop - start)) * 60);
+            const pphStart = parseTime(String(d.startTime));
+            const pphStop = parseTime(String(d.stopTime));
+            if (pphStart !== null && pphStop !== null && pphStop > pphStart) {
+              pphStr = '' + Math.round((final / (pphStop - pphStart)) * 60);
             }
           }
 
-          html += `<div class="history-dish">
-            <span class="history-dish-name">${d.name}</span>
-            <div class="history-dish-stats">
-              <span>${d.ordered}</span>
-              <span>${d.finalCount || '-'}</span>
-              <span style="color:${diffColor}; font-weight:600;">${diffStr}</span>
-              <span>${pphStr}</span>
-              <span class="h-notes">${d.notes || '-'}</span>
-            </div>
-          </div>`;
+          html += `<tr>
+            <td>${d.name}</td>
+            <td>${d.ordered}</td>
+            <td>${d.finalCount || '-'}</td>
+            <td style="color:${diffColor}; font-weight:600;">${diffStr}</td>
+            <td>${pphStr}</td>
+            <td class="notes-col">${d.notes || ''}</td>
+          </tr>`;
         });
-        html += '</div>';
+        html += '</tbody></table></div>';
       });
     });
 
