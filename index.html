@@ -40,6 +40,11 @@
   .station-1 .station-header { background: #1565C0; }
   .station-2 .station-header { background: #E65100; }
   .station-3 .station-header { background: #6A1B9A; }
+  .station-4 .station-header { background: #00695C; }
+  .station-5 .station-header { background: #B71C1C; }
+  .queue-station .station-header { background: #455A64; }
+  .queue-station .station-header::before { content: '📋 '; }
+  .empty-day-msg { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
   .station-header .pph-info { font-size: 12px; opacity: 0.9; font-weight: 500; text-align: right; }
   .station-header .pph-live { font-size: 15px; font-weight: 700; }
 
@@ -215,6 +220,9 @@ const PRODUCTION_DATA = {
       { name: "Bacon Tomato & Mushroom Omelette", addIn: "", guide: "x1 omelette, 3oz filling (tan)", instruction: "", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Beef Tenderloin Steak & Egg Scramble (3)", addIn: "", guide: "4oz beef (white), 5oz pico/egg (grey)", instruction: "Eggs left, tenderloin right", ordered: 80, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
+    "Station 4": { target: 800, dishes: [] },
+    "Station 5": { target: 800, dishes: [] },
+    "Queue": { target: 800, dishes: [] },
   },
   "Wednesday 3/25": {
     "Station 1": { target: 800, dishes: [
@@ -247,6 +255,9 @@ const PRODUCTION_DATA = {
       { name: "Ranch Chicken w/ Mozzarella & Bacon (2)", addIn: "", guide: "6oz brussels (red), 4oz chicken", instruction: "Brussels left, chicken right", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Overnight Oats", addIn: "", guide: "6.5oz oats (white), 2oz granola, blueberries", instruction: "Scoop oats, top with blueberries, granola ramekin in corner", ordered: 50, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
+    "Station 4": { target: 800, dishes: [] },
+    "Station 5": { target: 800, dishes: [] },
+    "Queue": { target: 800, dishes: [] },
   },
   "Thursday 3/26": {
     "Station 1": { target: 800, dishes: [
@@ -255,6 +266,9 @@ const PRODUCTION_DATA = {
     ]},
     "Station 2": { target: 800, dishes: [] },
     "Station 3": { target: 800, dishes: [] },
+    "Station 4": { target: 800, dishes: [] },
+    "Station 5": { target: 800, dishes: [] },
+    "Queue": { target: 800, dishes: [] },
   }
 };
 
@@ -315,6 +329,10 @@ function fixFirebaseArrays(data) {
   Object.keys(data).forEach(dayKey => {
     const day = data[dayKey];
     if (!day || typeof day !== 'object') return;
+    // Ensure all standard stations exist for every day
+    STATION_ORDER.forEach(stKey => {
+      if (!day[stKey]) day[stKey] = { target: 800, dishes: [] };
+    });
     Object.keys(day).forEach(stationKey => {
       const station = day[stationKey];
       if (!station) { day[stationKey] = { target: 800, dishes: [] }; return; }
@@ -398,8 +416,16 @@ db.ref('.info/connected').on('value', (snap) => {
   }
 });
 
-const stationColors = { "Station 1": ["#1565C0","#1976D2"], "Station 2": ["#E65100","#F57C00"], "Station 3": ["#6A1B9A","#8E24AA"] };
-const stationClasses = { "Station 1": "station-1", "Station 2": "station-2", "Station 3": "station-3" };
+const stationColors = { "Queue": ["#455A64","#546E7A"], "Station 1": ["#1565C0","#1976D2"], "Station 2": ["#E65100","#F57C00"], "Station 3": ["#6A1B9A","#8E24AA"], "Station 4": ["#00695C","#00897B"], "Station 5": ["#B71C1C","#C62828"] };
+const stationClasses = { "Queue": "queue-station", "Station 1": "station-1", "Station 2": "station-2", "Station 3": "station-3", "Station 4": "station-4", "Station 5": "station-5" };
+const STATION_ORDER = ["Queue", "Station 1", "Station 2", "Station 3", "Station 4", "Station 5"];
+
+// Returns stations for a day in correct order (Queue first, then 1-5)
+function sortedStations(dayKey) {
+  const existing = Object.keys(PRODUCTION_DATA[dayKey] || {});
+  return STATION_ORDER.filter(s => existing.includes(s))
+    .concat(existing.filter(s => !STATION_ORDER.includes(s)));
+}
 // Returns day keys sorted by actual calendar date (e.g. 3/24 before 3/26)
 function sortedDays() {
   return Object.keys(PRODUCTION_DATA).sort((a, b) => {
@@ -509,24 +535,34 @@ function render() {
   const dayData = PRODUCTION_DATA[currentDay];
   if (!dayData) { try { updateMoveBanner(); } catch(e) {} return; }
 
-  Object.entries(dayData).forEach(([stationName, stationData]) => {
+  let hasAnyDishes = false;
+  sortedStations(currentDay).forEach(stationName => {
+    let stationData = dayData[stationName];
     // Safety: ensure dishes array exists
-    if (!stationData || !stationData.dishes) { stationData = stationData || {}; stationData.dishes = stationData.dishes || []; }
+    if (!stationData || !stationData.dishes) { stationData = stationData || {}; stationData.dishes = []; }
+
+    // Hide empty stations (they're still available as move targets)
+    if (stationData.dishes.length === 0) return;
+    hasAnyDishes = true;
 
     const stationDiv = document.createElement('div');
-    stationDiv.className = `station ${stationClasses[stationName]} ${compactView ? 'compact' : ''}`;
+    stationDiv.className = `station ${stationClasses[stationName] || 'station-1'} ${compactView ? 'compact' : ''}`;
 
     const totalOrdered = stationData.dishes.reduce((s, d) => s + d.ordered, 0);
     const totalTrays = stationData.dishes.reduce((s, d) => s + Math.ceil(d.ordered / 8), 0);
     const totalFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
     const livePPH = getStationPPH(stationData);
+    const isQueue = stationName === 'Queue';
 
     stationDiv.innerHTML = `
       <div class="station-header">
-        <span>${stationName}</span>
+        <span>${stationName}${isQueue ? ' — assign dishes to stations using Move Dishes' : ''}</span>
         <div class="pph-info">
-          <div>Target: ${stationData.target} PPH | ${totalOrdered} ordered | ${totalTrays} trays${totalFinal ? ` | ${totalFinal} plated` : ''}</div>
-          ${livePPH !== null ? `<div class="pph-live">Live PPH: ${livePPH}</div>` : ''}
+          ${isQueue
+            ? `<div>${totalOrdered} ordered | ${stationData.dishes.length} dish${stationData.dishes.length !== 1 ? 'es' : ''} to assign</div>`
+            : `<div>Target: ${stationData.target} PPH | ${totalOrdered} ordered | ${totalTrays} trays${totalFinal ? ` | ${totalFinal} plated` : ''}</div>
+               ${livePPH !== null ? `<div class="pph-live">Live PPH: ${livePPH}</div>` : ''}`
+          }
         </div>
       </div>
       <div class="dish-list" data-station="${stationName}"></div>
@@ -565,6 +601,13 @@ function render() {
 
     el.appendChild(stationDiv);
   });
+
+  if (!hasAnyDishes) {
+    const msg = document.createElement('div');
+    msg.className = 'empty-day-msg';
+    msg.textContent = 'No dishes assigned yet. Upload a case order PDF to populate this week, or use Move Dishes to assign dishes from another day.';
+    el.appendChild(msg);
+  }
 
   try { updateMoveBanner(); } catch(e) { selectedDish = null; console.error('Move banner error:', e); }
 }
@@ -623,9 +666,9 @@ function createDishRow(dish, idx, stationName) {
     row.innerHTML = `
       <div class="drag-handle">\u2630</div>
       <div class="dish-info">
-        <div class="dish-name editable" contenteditable="true" spellcheck="false"
+        <div class="dish-name editable" contenteditable="true" spellcheck="false" tabindex="-1"
           onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'name',this.textContent)">${dish.name}</div>
-        <div class="dish-details editable" contenteditable="true" spellcheck="false"
+        <div class="dish-details editable" contenteditable="true" spellcheck="false" tabindex="-1"
           onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'guide',this.textContent)">${dish.guide}</div>
       </div>
       <div class="dish-metrics">
@@ -666,7 +709,7 @@ function createDishRow(dish, idx, stationName) {
             onclick="event.stopPropagation()" onblur="updateNotes('${currentDay}','${stationName}',${idx},this.value)">
         </div>
       </div>
-      <button class="expand-btn" onclick="toggleDetail('${sid}',${idx},event)">\u25B6</button>
+      <button class="expand-btn" tabindex="-1" onclick="toggleDetail('${sid}',${idx},event)">\u25B6</button>
     `;
   }
 
@@ -782,7 +825,8 @@ function updateMoveBanner() {
   const otherDayStations = [];
 
   sortedDays().forEach(day => {
-    Object.keys(PRODUCTION_DATA[day]).forEach(station => {
+    // Always offer all stations (Queue + 1-5) even if currently empty
+    STATION_ORDER.forEach(station => {
       if (day === selectedDish.day && station === selectedDish.station) return;
       if (day === selectedDish.day) {
         sameDayStations.push({ day, station, label: station });
@@ -814,6 +858,10 @@ function moveDishTo(targetDay, targetStation) {
   // Safety checks
   try {
     const sourceDishes = PRODUCTION_DATA[selectedDish.day][selectedDish.station].dishes;
+    // Auto-create the target station if it doesn't exist yet
+    if (!PRODUCTION_DATA[targetDay][targetStation]) {
+      PRODUCTION_DATA[targetDay][targetStation] = { target: 800, dishes: [] };
+    }
     const targetDishes = PRODUCTION_DATA[targetDay][targetStation].dishes;
     if (!sourceDishes || selectedDish.index >= sourceDishes.length) { selectedDish = null; render(); return; }
     if (!targetDishes) { selectedDish = null; render(); return; }
