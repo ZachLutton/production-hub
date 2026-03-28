@@ -280,6 +280,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 const dataRef = db.ref('productionData');
+const dishLibraryRef = db.ref('dishLibrary');
 let isRemoteUpdate = false;
 let syncTimeout = null;
 
@@ -315,6 +316,72 @@ function syncToFirebase() {
   syncTimeout = setTimeout(() => {
     dataRef.set(sanitizeKeys(PRODUCTION_DATA));
   }, 300);
+}
+
+// Seed the Dish Library from the current PRODUCTION_DATA
+// This runs once to populate the library with all known guides/instructions
+function seedDishLibrary() {
+  dishLibraryRef.once('value', snap => {
+    const existing = snap.val() || {};
+    const updates = {};
+    Object.values(PRODUCTION_DATA).forEach(dayData => {
+      Object.values(dayData).forEach(stationData => {
+        if (!stationData || !Array.isArray(stationData.dishes)) return;
+        stationData.dishes.forEach(dish => {
+          if (!dish.name) return;
+          const key = dish.name.replace(/[.#$/\[\]]/g, '_');
+          if (!existing[key]) {
+            updates[key] = { name: dish.name, guide: dish.guide || '', instruction: dish.instruction || '', addIn: dish.addIn || '' };
+          } else {
+            // Update only fields that have values in current data but not in library
+            const patch = {};
+            if (dish.guide && !existing[key].guide) patch.guide = dish.guide;
+            if (dish.instruction && !existing[key].instruction) patch.instruction = dish.instruction;
+            if (dish.addIn && !existing[key].addIn) patch.addIn = dish.addIn;
+            if (Object.keys(patch).length) updates[key] = Object.assign({}, existing[key], patch);
+          }
+        });
+      });
+    });
+    if (Object.keys(updates).length) {
+      dishLibraryRef.update(updates).then(() => console.log('Dish Library seeded with', Object.keys(updates).length, 'dishes'));
+    } else {
+      console.log('Dish Library already up to date');
+    }
+  });
+}
+
+// Apply Dish Library guides/instructions/addIns to the current PRODUCTION_DATA
+// Called after loading new weekly data so any dish that exists in the library
+// gets its guide/instruction/addIn automatically filled in.
+function applyDishLibrary() {
+  dishLibraryRef.once('value', snap => {
+    const library = snap.val();
+    if (!library) return;
+    // Build a lookup: libKey -> { guide, instruction, addIn }
+    const lookup = {};
+    Object.values(library).forEach(entry => {
+      if (entry && entry.name) {
+        const key = entry.name.replace(/[.#$/\[\]]/g, '_');
+        lookup[key] = entry;
+      }
+    });
+    let changed = false;
+    Object.values(PRODUCTION_DATA).forEach(dayData => {
+      Object.values(dayData).forEach(stationData => {
+        if (!stationData || !Array.isArray(stationData.dishes)) return;
+        stationData.dishes.forEach(dish => {
+          const key = dish.name.replace(/[.#$/\[\]]/g, '_');
+          const entry = lookup[key];
+          if (!entry) return;
+          if (entry.guide && !dish.guide)       { dish.guide = entry.guide; changed = true; }
+          if (entry.instruction && !dish.instruction) { dish.instruction = entry.instruction; changed = true; }
+          if (entry.addIn && !dish.addIn)       { dish.addIn = entry.addIn; changed = true; }
+        });
+      });
+    });
+    if (changed) { syncToFirebase(); render(); }
+  });
 }
 
 // Firebase stores arrays as objects with numeric keys — this converts them back
@@ -361,6 +428,7 @@ function fixFirebaseArrays(data) {
 
 // Track current week to detect when a new week is loaded
 let lastKnownWeekKey = null;
+let dishLibrarySeeded = false;
 
 // Listen for real-time changes from other devices
 dataRef.on('value', (snapshot) => {
@@ -369,6 +437,7 @@ dataRef.on('value', (snapshot) => {
     // First time: push local data to Firebase
     dataRef.set(sanitizeKeys(PRODUCTION_DATA));
     lastKnownWeekKey = sortedDays()[0] || null;
+    setTimeout(seedDishLibrary, 1000);
     return;
   }
 
@@ -377,10 +446,11 @@ dataRef.on('value', (snapshot) => {
   const fixedData = fixFirebaseArrays(unsanitized);
 
   // Check if this is a new week (different day labels = new case order uploaded)
-  const newFirstDay = Object.keys(fixedData)[0];
-  if (lastKnownWeekKey && newFirstDay && newFirstDay !== lastKnownWeekKey) {
-    // New week detected — the old week was already saved during the update process
-    console.log('New week detected:', newFirstDay);
+  const newFirstDays = Object.keys(fixedData).sort();
+  const newFirstDay = newFirstDays[0];
+  const isNewWeek = lastKnownWeekKey && newFirstDay && newFirstDay !== lastKnownWeekKey;
+  if (isNewWeek) {
+    console.log('New week detected:', newFirstDay, '— will apply Dish Library');
   }
   lastKnownWeekKey = newFirstDay;
 
@@ -395,6 +465,15 @@ dataRef.on('value', (snapshot) => {
   renderTabs();
   render();
   isRemoteUpdate = false;
+  // Seed the library once on first load (captures guides from the current week)
+  if (!dishLibrarySeeded) {
+    dishLibrarySeeded = true;
+    setTimeout(seedDishLibrary, 1000);
+  }
+  // When a new week loads, auto-fill guides/instructions from the Dish Library
+  if (isNewWeek) {
+    setTimeout(applyDishLibrary, 500);
+  }
 });
 
 // Connection status indicator
@@ -744,6 +823,13 @@ function updateDishField(day, station, idx, field, value) {
   if (field === 'instruction' && value === '(click to add)') return;
   PRODUCTION_DATA[day][station].dishes[idx][field] = value;
   syncToFirebase();
+  // If guide, instruction, or addIn is edited, save to the permanent Dish Library
+  // so it carries forward to next week automatically
+  if (field === 'guide' || field === 'instruction' || field === 'addIn') {
+    const dishName = PRODUCTION_DATA[day][station].dishes[idx].name;
+    const libKey = dishName.replace(/[.#$/\[\]]/g, '_');
+    dishLibraryRef.child(libKey).update({ name: dishName, [field]: value });
+  }
   showSaveNotice('Updated');
 }
 
