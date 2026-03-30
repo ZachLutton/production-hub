@@ -1,0 +1,1184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zedric's Monthly Inventory</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            padding: 10px;
+        }
+
+        .header {
+            background-color: #2d5016;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            margin-top: 15px;
+        }
+
+        .header-controls label {
+            font-weight: 600;
+        }
+
+        .header-controls input[type="month"] {
+            padding: 10px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            height: 44px;
+        }
+
+        .header-controls button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #e8f5e0;
+            border: 2px solid #2d5016;
+            color: #2d5016;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            min-height: 44px;
+        }
+
+        .header-controls button:hover {
+            background-color: #2d5016;
+            color: #e8f5e0;
+        }
+
+        .note {
+            font-size: 14px;
+            margin-top: 10px;
+            font-style: italic;
+        }
+
+        .section {
+            margin-bottom: 20px;
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .section-header {
+            background-color: #e8f5e0;
+            padding: 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+            font-weight: 600;
+            border-left: 5px solid #2d5016;
+            min-height: 50px;
+        }
+
+        .section-header:hover {
+            background-color: #d4ead0;
+        }
+
+        .section-header-info {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .section-header-title {
+            font-size: 18px;
+            color: #2d5016;
+        }
+
+        .section-header-meta {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .section-toggle {
+            font-size: 20px;
+            color: #2d5016;
+        }
+
+        .section-content {
+            display: none;
+        }
+
+        .section-content.expanded {
+            display: block;
+        }
+
+        .section-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .section-table thead {
+            background-color: #f9f9f9;
+            position: sticky;
+            top: 0;
+        }
+
+        .section-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #2d5016;
+            font-size: 14px;
+        }
+
+        .section-table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+
+        .section-table tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        .section-table tbody tr:hover {
+            background-color: #f0f0f0;
+        }
+
+        .item-number {
+            color: #999;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .item-name {
+            font-weight: 600;
+            color: #2d5016;
+        }
+
+        .item-brand {
+            font-size: 12px;
+            color: #666;
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            min-height: 44px;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #2d5016;
+            background-color: #fffef5;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            min-height: 44px;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #2d5016;
+            background-color: #fffef5;
+        }
+
+        .total {
+            font-weight: 600;
+            color: #2d5016;
+            text-align: right;
+        }
+
+        .section-total-row {
+            background-color: #e8f5e0;
+            font-weight: 600;
+        }
+
+        .delete-btn {
+            background-color: #ff6b6b;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            min-width: 44px;
+            min-height: 44px;
+            font-size: 18px;
+        }
+
+        .delete-btn:hover {
+            background-color: #d63031;
+        }
+
+        .add-btn {
+            background-color: #2d5016;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            min-height: 44px;
+            margin: 15px;
+        }
+
+        .add-btn:hover {
+            background-color: #1f3810;
+        }
+
+        .grand-total-section {
+            background-color: #2d5016;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: right;
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        @media print {
+            body {
+                padding: 0;
+            }
+
+            .header-controls button,
+            .add-btn,
+            .delete-btn,
+            .print-button,
+            .clear-button {
+                display: none !important;
+            }
+
+            th:last-child,
+            td:last-child {
+                display: none !important;
+            }
+
+            input[type="number"],
+            input[type="text"] {
+                border: none;
+                padding: 0;
+                background: transparent;
+            }
+
+            .section {
+                page-break-inside: avoid;
+            }
+
+            .section-header {
+                background-color: #e8f5e0;
+                border: 1px solid #2d5016;
+            }
+
+            .section-table {
+                font-size: 12px;
+            }
+
+            .section-table td,
+            .section-table th {
+                padding: 8px;
+            }
+        }
+
+        .meals-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .meals-table thead {
+            background-color: #f9f9f9;
+        }
+
+        .meals-table th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #2d5016;
+            font-size: 14px;
+        }
+
+        .meals-table td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+
+        .meals-table tbody tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+
+        .meals-table tbody tr:hover {
+            background-color: #f0f0f0;
+        }
+
+        .meal-input {
+            flex: 1;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            min-height: 44px;
+        }
+
+        .meal-input:focus {
+            outline: none;
+            border-color: #2d5016;
+            background-color: #fffef5;
+        }
+
+        .align-center {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Zedric's Monthly Inventory</h1>
+        <div class="header-controls">
+            <label for="monthSelect">Month & Year:</label>
+            <input type="month" id="monthSelect">
+            <button class="print-button" onclick="window.print()">Print</button>
+            <button class="clear-button" onclick="clearAll()">Clear All</button>
+        </div>
+        <div class="note">Prices updated from BEK Order Guide — March 2026</div>
+        <div id="syncStatus" style="margin-top:10px;font-size:14px;"><span style="color:#ff6b6b;">&#9679;</span> Connecting...</div>
+    </div>
+
+    <div id="inventory-container"></div>
+
+    <div class="grand-total-section">
+        GRAND TOTAL: $<span id="grandTotal">0.00</span>
+    </div>
+
+    <script>
+        const INVENTORY_DATA = {
+            'Walk-in Cooler': [
+                { itemNumber: '669027', name: 'Sour Cream Cultured', brand: 'Daisy Brands', pack: '4 / 5 LB', price: 30.88 },
+                { itemNumber: '164989', name: 'Yogurt Strained Bulgarian', brand: 'White Mountain Foods', pack: '1 / 8 LB', price: 35.54 },
+                { itemNumber: '483810', name: 'Sauce Tzatziki For Gyros', brand: 'Kronos', pack: '4 / 0.5 GAL', price: 45.40 },
+                { itemNumber: '389120', name: 'Butter Unsalted European Style', brand: 'Plugra', pack: '36 / 1 LB', price: 120.85 },
+                { itemNumber: '800401', name: 'Chocolate Chip Semi Sweet', brand: 'Hershey', pack: '12 / 12 OZ', price: 59.39 },
+                { itemNumber: '171985', name: 'Milk Lowfat 1% Gallon', brand: 'Oak Farms', pack: '4 / 1 GAL', price: 26.47 },
+                { itemNumber: '028201', name: 'Juice Lemon Fresh Squeezed', brand: 'Markon Ready Set Serve', pack: '6 / .5 GAL', price: 9.85 },
+                { itemNumber: '029210', name: 'Juice Lime Gently Pasteurized', brand: 'Markon Ready Set Serve', pack: '6 / .5 GAL', price: 10.12 },
+                { itemNumber: '104973', name: 'Cheese Cheddar Jack Shrd Fancy', brand: 'Masters Gallery', pack: '4 / 5 LB', price: 56.75 },
+                { itemNumber: '158418', name: 'Cheese Parm Grated Style', brand: 'Bellacibo', pack: '2 / 5 LB', price: 38.90 },
+                { itemNumber: '152510', name: 'Cheese Feta Crumbles', brand: 'Kronos', pack: '2 / 5 LB', price: 44.58 },
+                { itemNumber: '747140', name: 'Cheese Mozzarella Shred', brand: 'Stella', pack: '6 / 5 LB BAG', price: 88.94 },
+                { itemNumber: '209928', name: 'Cheese Gruyere Shredded', brand: 'Di Santo', pack: '2 / 5 LB', price: 73.96 },
+                { itemNumber: '106810', name: 'Potato Mashed Red Skin RFRG', brand: 'Simply Potatoes', pack: '4 / 6 LB', price: 35.33 },
+                { itemNumber: '171080', name: 'Potato Diced Sthrn Sty 5/8in', brand: 'Ellington Farms', pack: '2 / 10 LB', price: 29.89 },
+                { itemNumber: '552722', name: 'Potatoes Fingerling Mixed Color', brand: 'Packer', pack: '2 / 5 LB', price: 38.77 },
+                { itemNumber: '393413', name: 'Egg White Liquid', brand: 'Papettis', pack: '15 / 2 LB', price: 78.75 },
+                { itemNumber: '120564', name: 'Egg Liquid Ez Breakfast Blend', brand: 'Papettis', pack: '2 / 20 LB', price: 78.37 },
+                { itemNumber: '798099', name: 'Milk Almond Silk Vanilla', brand: 'White Wave', pack: '6 / 64 OZ', price: 28.80 },
+                { itemNumber: '811052', name: 'Base Chicken All Natural Gf', brand: 'Minor\'s', pack: '6 / 1 LB', price: 74.32 },
+                { itemNumber: '393795', name: 'Egg Omelette W/cheddar Chs', brand: 'Papettis', pack: '72 / 3.5 OZ', price: 58.51 },
+                { itemNumber: '783276', name: 'Anchovy Paste Tube', brand: 'Roland', pack: '12 / 2 OZ', price: 33.19 },
+                { itemNumber: '149820', name: 'Mustard Dijon Premium', brand: 'Roland', pack: '2 / 1 GAL', price: 36.07 },
+                { itemNumber: '131513', name: 'Bacon Topping Natural', brand: 'Hormel', pack: '2 / 5 LB', price: 84.45 },
+                { itemNumber: '197008', name: 'Mayonnaise Heavy Duty', brand: 'Dukes', pack: '4 / 1 GAL', price: 93.98 }
+            ],
+            'Produce': [
+                { itemNumber: '150105', name: 'Onion Green Iceless', brand: 'Markon Ready Set Serve', pack: '4 / 2 LB CTN', price: 23.39 },
+                { itemNumber: '107107', name: 'Mushroom Sliced 1/2 In Trh', brand: 'Basciani Foods', pack: '1 / 10 LB', price: 22.86 },
+                { itemNumber: '160016', name: 'Parsley Italian Flat Leaf', brand: 'Fresh From Keith\'s', pack: '1 / 12 CT', price: 17.42 },
+                { itemNumber: '104409', name: 'Cilantro Cello Wash & Trim', brand: 'Markon Ready Set Serve', pack: '4 / 1 LB', price: 18.29 },
+                { itemNumber: '114107', name: 'Garlic Whole Peeled', brand: 'Markon Ready Set Serve', pack: '4 / 5 LB', price: 89.06 },
+                { itemNumber: '200305', name: 'Squash Spaghetti 1 1/9 Bsh', brand: 'Packer', pack: '1 / 1 CS', price: 28.89 },
+                { itemNumber: '109001', name: 'Cucumber Large English 12 Ct', brand: 'Packer', pack: '1 / 12 CT', price: 27.70 },
+                { itemNumber: '177844', name: 'Lemon Choice Mini Pk 34-44 Ct', brand: 'Packer', pack: '1 / 7 LB', price: 18.46 },
+                { itemNumber: '165083', name: 'Pepper Serrano', brand: 'Fresh From Keith\'s', pack: '1 / 5 LB', price: 18.27 },
+                { itemNumber: '195253', name: 'Pepper Poblanos Diced Rstd', brand: 'New Mexico Green Chile', pack: '1 / 25 LB', price: 54.72 },
+                { itemNumber: '187397', name: 'Pico De Gallo 5 Lb', brand: 'Markon Ready Set Serve', pack: '1 / 5 LB', price: 19.87 },
+                { itemNumber: '105016', name: 'Carrot Baby Peeled Tri Color', brand: 'Packer', pack: '1 / 5 LB', price: 34.35 },
+                { itemNumber: '080089', name: 'Broccoli Floret Bite Size', brand: 'Markon Ready Set Serve', pack: '4 / 3 LB', price: 28.59 },
+                { itemNumber: '102114', name: 'Celery Diced 1/4 Inch', brand: 'Packer', pack: '1 / 5 LB', price: 13.79 },
+                { itemNumber: '164809', name: 'Carrot Bias Cut 1/4 In Trh', brand: 'Grimmway Farms', pack: '4 / 5 LB', price: 22.67 },
+                { itemNumber: '198717', name: 'Broccolini Iceless', brand: 'Markon Ready Set Serve', pack: '3 / 2 LB', price: 27.79 },
+                { itemNumber: '187390', name: 'Tomato Diced 1/4 In 20 Lb', brand: 'Markon Ready Set Serve', pack: '4 / 5 LB', price: 70.20 },
+                { itemNumber: '155099', name: 'Onion Diced 1/4 Inch', brand: 'Packer', pack: '4 / 5 LB', price: 25.59 },
+                { itemNumber: '129226', name: 'Brussels Sprouts Halves', brand: 'Markon Ready Set Serve', pack: '2 / 5 LB', price: 30.06 },
+                { itemNumber: '116878', name: 'Onion Red Diced 1/4 Inch', brand: 'Lipman', pack: '4 / 5 LB', price: 44.49 },
+                { itemNumber: '179416', name: 'Asparagus Jumbo 1', brand: 'Markon First Crop', pack: '11 / 1 LB', price: 45.74 },
+                { itemNumber: '552354', name: 'Bean Green Cut 1-2 in', brand: 'Packer', pack: '2 / 5 LB', price: 30.66 },
+                { itemNumber: '140005', name: 'Mushroom White Small Button', brand: 'Packer', pack: '1 / 10 LB', price: 28.95 }
+            ],
+            'Meat': [
+                { itemNumber: '178369', name: 'Sausage Black Oak Smoked Fzn', brand: 'Black Oak', pack: '1 / 11 LB', price: 42.80 },
+                { itemNumber: '211262', name: 'Chicken Breast 4 Oz Blsl Fresh', brand: 'Pilgrims Pride', pack: '2 / 10 LB', price: 79.90 },
+                { itemNumber: '168546', name: 'Beef Ground 93/07 Fine', brand: 'Swift', pack: '6 / 10 LB', price: 6.23 },
+                { itemNumber: '492005', name: 'Turkey Breast Roast Blsl', brand: 'Ellington Farms', pack: '4 / 5 LB', price: 5.71 },
+                { itemNumber: '550312', name: 'Chicken Breast Random Blsl', brand: 'Wayne Farms', pack: '4 / 10 LB', price: 89.98 },
+                { itemNumber: '553780', name: 'Turkey Ground No Antibiotics Ever', brand: 'Perdue', pack: '4 / 5 LB', price: 62.98 },
+                { itemNumber: '185095', name: 'Beef Patty 4/1 90/10 Wide', brand: 'Winn Meat', pack: '48 / 4 OZ', price: 72.22 },
+                { itemNumber: '122844', name: 'Beef Brisket Bnls 120 Prime', brand: 'IBP', pack: '1 / 5 CT', price: 5.53 },
+                { itemNumber: '512161', name: 'Beef Tip Tenderloin', brand: 'Keith Valley Packing', pack: '2 / 5 LB', price: 11.16 },
+                { itemNumber: '162516', name: 'Beef Top Butt Sirloin Bnls', brand: 'Palo Duro Meats', pack: '5 / 10-14 LB', price: 6.34 },
+                { itemNumber: '487529', name: 'Chicken Thigh Diced Raw', brand: 'Tyson', pack: '4 / 5 LB', price: 58.56 }
+            ],
+            'Spice Rack': [
+                { itemNumber: '115608', name: 'Chili Powder', brand: 'Spice Classics', pack: '1 / 6 LB', price: 36.75 },
+                { itemNumber: '104932', name: 'Paprika', brand: 'Gran Sabor', pack: '1 / 4.5 LB', price: 29.26 },
+                { itemNumber: '774055', name: 'Cumin Comino Ground', brand: 'Spice Classics', pack: '1 / 4.5 LB', price: 30.54 },
+                { itemNumber: '128173', name: 'Pepper Black Coarse Grind', brand: 'Spice Classics', pack: '1 / 5 LB', price: 59.32 },
+                { itemNumber: '774146', name: 'Oregano Leaves', brand: 'Mccormick', pack: '1 / 24 OZ', price: 30.64 },
+                { itemNumber: '774223', name: 'Thyme Leaf Whole', brand: 'Mccormick', pack: '1 / 27.5 OZ', price: 44.88 },
+                { itemNumber: '774411', name: 'Pepper Red Crushed', brand: 'Texas Custom Spice', pack: '1 / 3 LB', price: 28.76 },
+                { itemNumber: '774477', name: 'Seasoning Blackened Red Fish', brand: 'Cajun Magic', pack: '4 / 24 OZ', price: 44.46 },
+                { itemNumber: '101922', name: 'Sesame Seed Hulled', brand: '', pack: '1 / 16 OZ', price: 9.66 },
+                { itemNumber: '685406', name: 'Caper Nonpareilles Small', brand: 'Roland', pack: '6 / 32 OZ', price: 11.11 },
+                { itemNumber: '137394', name: 'Chia Seeds', brand: 'Di Santino', pack: '1 / 10 LB', price: 59.97 },
+                { itemNumber: '696131', name: 'Baking Soda', brand: 'Clabber Girl', pack: '6 / 5 LB', price: 6.57 },
+                { itemNumber: '696005', name: 'Baking Powder', brand: 'Clabber Girl', pack: '6 / 5 LB', price: 19.81 },
+                { itemNumber: '793069', name: 'Honey Pure Blend', brand: 'Busybee Honey', pack: '4 / 1 GAL', price: 50.65 },
+                { itemNumber: '777034', name: 'Extract Vanilla Pure', brand: 'Mccormick', pack: '1 / 1 QT', price: 82.39 },
+                { itemNumber: '124815', name: 'Sauce Soy Tamari Low Sodium Gf', brand: 'Kikkoman', pack: '6 / 0.5 GAL', price: 83.76 },
+                { itemNumber: '686235', name: 'Vinegar Balsamic', brand: 'Colavita', pack: '2 / 5 LTR', price: 40.50 },
+                { itemNumber: '686030', name: 'Vinegar Apple Cider', brand: 'Heinz', pack: '4 / 1 GAL', price: 12.61 },
+                { itemNumber: '779181', name: 'Oil Sesame 100% Pure', brand: 'Roland', pack: '4 / 1 GAL', price: 63.67 },
+                { itemNumber: '686207', name: 'Cooking Wine Marsala', brand: 'Roland', pack: '4 / 128 OZ', price: 69.93 },
+                { itemNumber: '700200', name: 'Pasta Farfalle Bowtie #65', brand: 'Bellacibo', pack: '2 / 10 LB', price: 27.97 },
+                { itemNumber: '205589', name: 'Pasta Elbow Macaroni', brand: 'Bellacibo', pack: '2 / 10 LB', price: 26.92 },
+                { itemNumber: '205594', name: 'Pasta Rotini Tri Color', brand: 'Bellacibo', pack: '2 / 10 LB', price: 34.81 },
+                { itemNumber: '183640', name: 'Salt Sea Kosher Coarse', brand: 'Ellington Farms', pack: '12 / 3 LB', price: 31.22 },
+                { itemNumber: '774062', name: 'Seasoning Dill Weed', brand: 'Mccormick', pack: '1 / 5 OZ', price: 17.72 },
+                { itemNumber: '775027', name: 'Chive Freeze Dried', brand: 'Mccormick', pack: '1 / 1.35 OZ', price: 11.19 },
+                { itemNumber: '774187', name: 'Rosemary Ground', brand: 'Mccormick', pack: '1 / 11 OZ', price: 21.55 },
+                { itemNumber: '774870', name: 'Garlic Powder', brand: 'Texas Custom Spice', pack: '1 / 16 OZ', price: 12.03 },
+                { itemNumber: '774137', name: 'Onion Powder', brand: 'Mccormick', pack: '1 / 20 OZ', price: 11.30 },
+                { itemNumber: '774994', name: 'Parsley Flake', brand: 'Texas Custom Spice', pack: '1 / 1 LB', price: 26.83 },
+                { itemNumber: '774038', name: 'Cinnamon Ground', brand: 'Mccormick', pack: '1 / 18 OZ', price: 16.40 },
+                { itemNumber: '697100', name: 'Starch Corn 1 Lb', brand: 'Argo', pack: '24 / 1 LB', price: 46.50 },
+                { itemNumber: '780009', name: 'Sugar Brown Light 2 Lb', brand: 'Imperial Sugar', pack: '12 / 2 LB', price: 35.98 },
+                { itemNumber: '798001', name: 'Milk Evaporated', brand: 'Velvet', pack: '24 / 12 OZ', price: 31.42 },
+                { itemNumber: '174372', name: 'Wood Chips Post Oak', brand: 'B&B Charcoal', pack: '1 / 6 CT', price: 13.28 },
+                { itemNumber: '779347', name: 'Oil Olive Pomace', brand: 'Roland', pack: '4 / 1 GAL', price: 166.28 },
+                { itemNumber: '137488', name: 'Ginger Ground', brand: 'Mccormick', pack: '1 / 12.5 OZ', price: 18.53 },
+                { itemNumber: '774048', name: 'Coriander Ground', brand: 'Mccormick', pack: '1 / 14 OZ', price: 13.64 },
+                { itemNumber: '686012', name: 'Vinegar Red Wine', brand: 'Heinz', pack: '4 / 1 GAL', price: 14.29 }
+            ],
+            'Kitchen Dry Supplies': [
+                { itemNumber: '660333', name: 'Sauce Marinara Rtu', brand: 'Angela Mia', pack: '6 / #10 CAN', price: 66.07 },
+                { itemNumber: '125049', name: 'Applesauce Unsweetened Fancy', brand: 'Ellington Farms', pack: '6 / #10 CAN', price: 44.32 },
+                { itemNumber: '650454', name: 'Tomato Crushed Angela Mia', brand: 'Angela Mia', pack: '6 / #10 CAN', price: 46.93 },
+                { itemNumber: '650477', name: 'Ketchup Fancy', brand: 'Hunt\'s', pack: '6 / #10 CAN', price: 54.04 },
+                { itemNumber: '660220', name: 'Sauce Enchilada Mild Rtu', brand: 'La Victoria', pack: '6 / #10 CAN', price: 57.77 },
+                { itemNumber: '685055', name: 'Pepper Red Bell Diced', brand: 'Moody Dunbar', pack: '6 / #10 CAN', price: 69.96 },
+                { itemNumber: '650082', name: 'Bean Pinto Fancy', brand: 'Bush\'s Best', pack: '6 / #10 CAN', price: 41.30 },
+                { itemNumber: '178447', name: 'Flour Almond Meal', brand: 'Natures Eats', pack: '1 / 25 LB', price: 99.95 },
+                { itemNumber: '137388', name: 'Rice Jasmine', brand: 'Di Santino', pack: '1 / 25 LB', price: 33.07 },
+                { itemNumber: '106655', name: 'Rice Brown Parboiled Wg', brand: 'Producers Rice Mill', pack: '1 / 25 LB', price: 19.55 },
+                { itemNumber: '197142', name: 'Film 18x2000 Clear Wrap', brand: 'Essentials', pack: '1 / 1 ROLL', price: 28.65 },
+                { itemNumber: '116607', name: 'Foil 18x500 Roll Heavy Duty', brand: 'Essentials', pack: '1 / 1 ROLL', price: 75.48 },
+                { itemNumber: '698007', name: 'Pan Spray Pam Saute & Grill', brand: 'Pam', pack: '6 / 17 OZ', price: 30.56 },
+                { itemNumber: '780002', name: 'Sugar Granulated Ex Fine 25 Lb', brand: 'Imperial Sugar', pack: '1 / 25 LB', price: 24.77 },
+                { itemNumber: '875476', name: 'Liner Pan Liftoff Grease Proof', brand: 'Dixie', pack: '1 / 1000 CT', price: 79.98 },
+                { itemNumber: '114293', name: 'Quinoa Tri Color Prewashed', brand: 'Roland', pack: '2 / 5 LB', price: 58.78 },
+                { itemNumber: '', name: 'Peanut Butter', brand: 'BEK', pack: '12 / 16 OZ', price: 43.98 }
+            ],
+            'Label Printing Table': [
+                { itemNumber: '121690', name: 'Baking Cup White 4.5 In', brand: 'Regency Wraps', pack: '20 / 500 CT', price: 7.82 },
+                { itemNumber: '122588', name: 'Pecan Pieces Medium Fancy', brand: 'Ellington Farms', pack: '1 / 5 LB', price: 53.80 },
+                { itemNumber: '878324', name: 'Label 3 In Use First Orange', brand: 'Daymark', pack: '1 / 500 CT', price: 14.74 },
+                { itemNumber: '182093', name: 'Label 2x2.2 7-day Of Week', brand: 'Daymark', pack: '1 / 1000 CT', price: 30.46 },
+                { itemNumber: '214452', name: 'Bag Freezer Reclosable 1 Gal', brand: 'Essentials', pack: '1 / 200 CT', price: 23.25 }
+            ],
+            'Chemicals/Janitorial Supplies': [
+                { itemNumber: '112741', name: 'Rinse Aid Care Tablets Blue', brand: 'Rational Sales', pack: '1 / 150 CT', price: 141.63 },
+                { itemNumber: '174210', name: 'Cleaner Tablet Green Active', brand: 'Rational Sales', pack: '1 / 150 CT', price: 178.62 },
+                { itemNumber: '885911', name: 'Sanitizer Sani-quad Sinkrite', brand: 'Ssdc', pack: '2 / 1 GAL', price: 93.89 },
+                { itemNumber: '887065', name: 'Detergent Speed Clean', brand: 'Ssdc', pack: '2 / 1 GAL', price: 91.28 },
+                { itemNumber: '887092', name: 'Rinse Aid Fast Dry', brand: 'Ssdc', pack: '2 / 1 GAL', price: 100.71 },
+                { itemNumber: '134180', name: 'Pad Scour Hexagon Hvy Abrasive', brand: 'Scotch-brite', pack: '1 / 15 CT', price: 10.92 },
+                { itemNumber: '887005', name: 'Soap Dish Blue Liquid', brand: 'Essentials', pack: '1 / 5 GAL', price: 125.90 },
+                { itemNumber: '885916', name: 'Sanitizer Dish & Laundry', brand: 'Ssdc', pack: '1 / 5 GAL', price: 94.45 },
+                { itemNumber: '129831', name: 'Salt Wtr Softener Crystals', brand: 'Morton', pack: '1 / 50 LB', price: 12.47 },
+                { itemNumber: '144183', name: 'Bleach Keith Ultra', brand: 'Essentials', pack: '6 / 1 GAL', price: 23.02 },
+                { itemNumber: '885147', name: 'Drain Maintainer Enzyme', brand: 'Essentials', pack: '12 / 32 OZ', price: 101.91 },
+                { itemNumber: '199170', name: 'Soap Hand 1 Gal', brand: 'Palmer Fixture', pack: '1 / 4 CT', price: 40.21 },
+                { itemNumber: '980196', name: 'Cleaner Stainless Steel Polish', brand: 'Diversified Chemicals', pack: '4 / 32 OZ', price: 42.79 },
+                { itemNumber: '123438', name: 'Veg And Fruit Wash Treatment', brand: 'Kay Chemical', pack: '2 / 1 GAL', price: 150.16 },
+                { itemNumber: '885818', name: 'Degreaser Inside Out Moprite', brand: 'Ssdc', pack: '2 / 1 GAL', price: 77.37 },
+                { itemNumber: '885224', name: 'Cleaner Track Moprite', brand: 'Ssdc', pack: '2 / 1 GAL', price: 100.61 },
+                { itemNumber: '133594', name: 'Disinfectant Cleaner Moprite', brand: 'Ssdc', pack: '2 / 0.8 GAL', price: 160.65 },
+                { itemNumber: '194880', name: 'Deodorizer Urinal Screen Melon', brand: 'Fresh Products', pack: '1 / 10 CT', price: 24.39 }
+            ],
+            'Plating Team Supplies': [
+                { itemNumber: '660356', name: 'Glaze Balsamic', brand: 'Roland', pack: '6 / 12.9 OZ', price: 42.02 },
+                { itemNumber: '104426', name: 'Lid Plas 9-12-20 Oz No Slot', brand: 'Dart', pack: '10 / 100 CT', price: 54.92 },
+                { itemNumber: '104162', name: 'Cup Plas 9 Oz Squat Clear', brand: 'Ultra Clear', pack: '20 / 50 CT', price: 75.11 },
+                { itemNumber: '111634', name: 'Cup Plas Souffle 1.5 Oz Trans', brand: 'Solo Cup', pack: '10 / 250 CT', price: 39.21 },
+                { itemNumber: '130860', name: 'Lid Plas Souffle 2 Oz', brand: 'Dart', pack: '20 / 125 CT', price: 39.43 },
+                { itemNumber: '146874', name: 'Syrup Pc Natural Breakfast', brand: 'Smucker\'s', pack: '100 / 1 OZ', price: 22.88 },
+                { itemNumber: '113321', name: 'Sauce Bbq Hickory', brand: 'Sweet Baby Ray', pack: '4 / 1 GAL', price: 69.52 },
+                { itemNumber: '685042', name: 'Pepper Chipotle In Adobo', brand: 'San Marcos', pack: '24 / 7.5 OZ', price: 46.98 },
+                { itemNumber: '799205', name: 'Cereal Oats Quick', brand: 'Quaker', pack: '12 / 42 OZ', price: 69.64 },
+                { itemNumber: '195174', name: 'Glove Vinyl Medium Blue', brand: 'Safety Zone', pack: '10 / 100 CT', price: 25.58 },
+                { itemNumber: '176430', name: 'Glove Vinyl Large Black Pf', brand: 'Safety Zone', pack: '10 / 100 CT', price: 28.71 },
+                { itemNumber: '195176', name: 'Glove Vinyl X-large Blue', brand: 'Safety Zone', pack: '10 / 100 CT', price: 28.28 },
+                { itemNumber: '883711', name: 'Hair Net Beard Protector', brand: 'Disco', pack: '1 / 100 CT', price: 8.31 },
+                { itemNumber: '883710', name: 'Hair Net Dark Brown Light Wgt', brand: 'Disco', pack: '1 / 144 CT', price: 21.95 },
+                { itemNumber: '871289', name: 'Cutlery Teaspoon Blk Mw Bulk', brand: 'Dixie', pack: '1 / 1000 CT', price: 33.98 },
+                { itemNumber: '197236', name: 'Liner Trash 60 Gal Black', brand: 'Essentials', pack: '1 / 100 CT', price: 39.98 },
+                { itemNumber: '157424', name: 'Cover Bun Rack Clear', brand: 'Pinnacle Plastics', pack: '1 / 50 CT', price: 25.32 },
+                { itemNumber: '883716', name: 'Glove Vinyl Small Powder Free', brand: 'Handgards', pack: '10 / 100 CT', price: 40.40 },
+                { itemNumber: '129707', name: 'Bag Reclosable 1 Gal 10.5x10.5', brand: 'Essentials', pack: '1 / 250 CT', price: 17.77 },
+                { itemNumber: '187911', name: 'Cup Plas Souffle 4 Oz Blk', brand: 'Crystalware', pack: '25 / 100 CT', price: 48.36 }
+            ],
+            'Front of House Supplies': [
+                { itemNumber: '116379', name: 'Water Smartwater', brand: 'Glaceau', pack: '12 / 1 LTR', price: 33.87 },
+                { itemNumber: '190156', name: 'Water Mineral Sparkling W/lime', brand: 'Topo Chico', pack: '24 / 15.5 OZ', price: 0.00 },
+                { itemNumber: '126331', name: 'Napkin Dixie Ultra 2-ply Brown', brand: 'Dixie Ultra', pack: '24 / 250 CT', price: 78.37 },
+                { itemNumber: '125469', name: 'Water Mineral W/lime', brand: 'Topo Chico', pack: '24 / 12 OZ', price: 39.62 },
+                { itemNumber: '201679', name: 'Water Flavored Lime Mint', brand: 'Topo Chico', pack: '24 / 12 OZ', price: 0.00 },
+                { itemNumber: '201678', name: 'Water Flavored Blubry Hibiscus', brand: 'Topo Chico', pack: '24 / 12 OZ', price: 37.56 },
+                { itemNumber: '201680', name: 'Water Flavored Tangerine', brand: 'Topo Chico', pack: '24 / 12 OZ', price: 38.74 },
+                { itemNumber: '129847', name: 'Bag Paper Brown W/handles', brand: 'Duro Bag Mfg', pack: '1 / 250 CT', price: 79.00 },
+                { itemNumber: '163458', name: 'Bag Thermal Blank 35 Liter', brand: 'Coldkeepers', pack: '1 / 50 CT', price: 139.98 },
+                { itemNumber: '188183', name: 'Meal Kit K F S Hw Blk Wrapped', brand: 'Wallace Packaging', pack: '1 / 250 CT', price: 27.18 },
+                { itemNumber: '133525', name: 'Sauce Pc Packet Sriracha Chili', brand: '', pack: '500 / 0.25 OZ', price: 29.47 },
+                { itemNumber: '139893', name: 'Sauce Pc Hot Cholula', brand: '', pack: '200 / 0.25 OZ', price: 13.37 },
+                { itemNumber: '202978', name: 'Water Sparkling - Summer Berry', brand: 'Waterloo', pack: '2/24ct', price: 13.54 },
+                { itemNumber: '145076', name: 'Water Sparkling - Lemon Lime', brand: 'Waterloo', pack: '2/24ct', price: 13.56 },
+                { itemNumber: '202969', name: 'Water Sparkling - Blackberry Lemon', brand: 'Waterloo', pack: '2/24 Ct', price: 13.68 },
+                { itemNumber: '152501', name: 'Water Sparkling - Strawberry', brand: 'Waterloo', pack: '2/24ct', price: 13.51 },
+                { itemNumber: '129015', name: 'Tea Honey and Mint Sweet', brand: 'Moonshine Sweet Tea', pack: '', price: 17.61 },
+                { itemNumber: '131920', name: 'Tea Green Austin Honey', brand: 'Texas Tea', pack: '', price: 17.48 },
+                { itemNumber: '129017', name: 'Tea Original Sweet', brand: 'Moonshine Sweet Tea', pack: '', price: 17.61 },
+                { itemNumber: '129016', name: 'Tea Peach Sweet', brand: 'Moonshine Sweet Tea', pack: '', price: 17.61 },
+                { itemNumber: '129013', name: 'Tea Unsweetened Original', brand: 'Moonshine Sweet Tea', pack: '', price: 17.61 },
+                { itemNumber: '207660', name: 'Soda Cream Sparkling Tonic', brand: 'Olipop', pack: '', price: 25.49 },
+                { itemNumber: '195199', name: 'Soda Lemon Lime', brand: 'Olipop', pack: '', price: 25.62 },
+                { itemNumber: '195030', name: 'Soda Grape Classic', brand: 'Olipop', pack: '', price: 27.01 },
+                { itemNumber: '168928', name: 'Energy Drink - Sugar', brand: 'RedBull', pack: '1/24CT', price: 50.00 },
+                { itemNumber: '168927', name: 'Energy Drink - Sugar Free', brand: 'RedBull', pack: '1/24CT', price: 50.00 },
+                { itemNumber: '', name: 'Chocolate Protein Shake', brand: 'Fairlife', pack: '1/24 CT', price: 22.66 },
+                { itemNumber: '', name: 'Lidding Film Energy Machine (Small)', brand: 'Nexterra Packaging', pack: '1 Roll', price: 89.50 },
+                { itemNumber: '', name: '12 Oz Containers', brand: 'Go Green', pack: '552/cs', price: 126.65 },
+                { itemNumber: '', name: 'Lidding Film Speedy Machine (Large)', brand: 'Nexterra Packaging', pack: '1 Roll', price: 125.00 },
+                { itemNumber: '', name: 'Juice - Balm', brand: 'Stoke', pack: '1/6CT', price: 7.25 },
+                { itemNumber: '', name: 'Juice - The Shield', brand: 'Stoke', pack: '1/6CT', price: 7.25 },
+                { itemNumber: '', name: 'Juice - The Peak', brand: 'Stoke', pack: '1/6CT', price: 7.25 },
+                { itemNumber: '', name: 'Juice - Battery', brand: 'Stoke', pack: '1/6CT', price: 7.25 },
+                { itemNumber: '', name: 'Juice - Warrior', brand: 'Stoke', pack: '1/6CT', price: 7.25 },
+                { itemNumber: '', name: 'Juice - Phoenix', brand: 'Stoke', pack: '1/6CT', price: 7.25 },
+                { itemNumber: '', name: 'Juice - Hulk', brand: 'Stoke', pack: '1/6CT', price: 7.25 },
+                { itemNumber: '', name: 'Ready Protein Bar - Variety Pack', brand: 'Ready', pack: '1/20pk', price: 16.98 },
+                { itemNumber: '', name: 'Pop Chips - Sour Cream and Onion', brand: 'Pop Chip', pack: '1/30Pk', price: 14.98 },
+                { itemNumber: '', name: 'Pop Chips - Salt and Vinegar', brand: 'Pop Chip', pack: '1/30PK', price: 14.98 },
+                { itemNumber: '', name: 'Pop Chips - BBQ', brand: 'Pop Chip', pack: '1/30Pk', price: 14.98 },
+                { itemNumber: '', name: 'Built Puff Bar', brand: 'Built', pack: '', price: 0.00 }
+            ],
+            'Bathroom Supplies': [
+                { itemNumber: '881026', name: 'Towel Roll Enmotion 10 In', brand: 'Enmotion', pack: '6 / 800 FT', price: 91.95 },
+                { itemNumber: '185750', name: 'Toilet Tissue 2-Ply Soft Mega', brand: 'Charmin', pack: '1 / 18 CT', price: 23.61 }
+            ],
+            'Freezer': [
+                { itemNumber: '337112', name: 'Cauliflower Iqf', brand: 'Markon First Crop', pack: '1 / 20 LB', price: 31.23 },
+                { itemNumber: '338610', name: 'Corn Cut', brand: 'Markon First Crop', pack: '1 / 20 LB', price: 29.00 },
+                { itemNumber: '349702', name: 'Vegetable Blend Peas & Carrots', brand: 'Markon First Crop', pack: '12 / 2.5 LB', price: 47.84 },
+                { itemNumber: '106530', name: 'Sausage Italian Topping Cooked', brand: 'Fontanini', pack: '3 / 5 LB', price: 83.00 },
+                { itemNumber: '348100', name: 'Spinach Chopped', brand: 'Markon First Crop', pack: '12 / 3 LB', price: 40.56 },
+                { itemNumber: '349493', name: 'Vegetable Blend Fajita', brand: 'Markon First Crop', pack: '6 / 2 LB', price: 28.37 },
+                { itemNumber: '303037', name: 'Blueberry Wild Iqf', brand: 'Jasper Wyman', pack: '2 / 5 LB', price: 36.62 },
+                { itemNumber: '202105', name: 'Mahi Mahi Portion 4oz Ivp', brand: 'Packer', pack: '1 / 10 LB', price: 110.20 },
+                { itemNumber: '155882', name: 'Potato Sweet Roasted Unseasoned', brand: 'Roastworks', pack: '6 / 2.5 LB', price: 37.79 },
+                { itemNumber: '106719', name: 'Pasta Penne Rigati Bulk Cooked', brand: 'Marzetti', pack: '1 / 20 LB', price: 38.80 },
+                { itemNumber: '138232', name: 'Chicken Tenderloin Brd Gf Rtc', brand: 'Wayne Farms', pack: '2 / 5 LB', price: 54.08 },
+                { itemNumber: '345503', name: 'Squash Zucchini Sliced 1/4in', brand: '', pack: '12 / 2 LB', price: 30.36 },
+                { itemNumber: '492773', name: 'Turkey Sausage Patty Cooked', brand: 'Jimmy Dean', pack: '128 / 1.25 OZ', price: 41.77 },
+                { itemNumber: '311099', name: 'Banana Slice Iqf', brand: '', pack: '1 / 20 LB', price: 31.07 },
+                { itemNumber: '393795', name: 'Egg Omelette W/cheddar Chs', brand: 'Papettis', pack: '72 / 3.5 OZ', price: 58.51 },
+                { itemNumber: '165083', name: 'Pepper Serrano', brand: 'Fresh From Keith\'s', pack: '1 / 5 LB', price: 18.27 },
+                { itemNumber: '136442', name: 'Onion Caramelized Sliced', brand: '', pack: '12 / 2 LB', price: 79.98 },
+                { itemNumber: '139366', name: 'Salmon Prtn 4oz Sknls Nor', brand: 'Admiral Of The Fleet', pack: '1 / 10 LB', price: 13.79 },
+                { itemNumber: '185467', name: 'Cauliflower Hashbrown', brand: '', pack: '', price: 48.35 }
+            ],
+            'Labeling Station': [
+                { itemNumber: '', name: 'Container Labels', brand: 'House Labels', pack: '1/50 CT', price: 182.50 },
+                { itemNumber: '', name: 'Shipping/Delivery Labels', brand: 'House Labels', pack: '4 Stacks 4X6"', price: 200.09 }
+            ]
+        };
+
+        const MEALS_DATA = [
+            { name: 'Beef Brisket Hash', price: 2.64 },
+            { name: 'Beef Tenderloin Steak and Eggs', price: 4.82 },
+            { name: 'Blueberry Protein Pancakes with Egg Scramble', price: 1.85 },
+            { name: 'Blueberry Pancake a la Carte', price: 1.66 },
+            { name: 'Country Sausage Breakfast Bowl', price: 1.63 },
+            { name: 'Egg Bites with Cauliflower Hashbrown', price: 2.76 },
+            { name: 'Homemade Turkey Chorizo over Cilantro Lime Brown Rice', price: 1.44 },
+            { name: 'Turkey Sausage, Scrambled Egg and Sweet Potato Hash', price: 1.93 },
+            { name: 'Omelette', price: 1.94 },
+            { name: 'Overnight Oats', price: 1.86 },
+            { name: 'Southern Style Breakfast Bowl', price: 1.78 },
+            { name: 'Tex-Mex Ground Turkey Sweet Picadillo', price: 2.51 },
+            { name: 'Arroz con Pollo', price: 1.78 },
+            { name: 'Beef Taco Skillet', price: 3.76 },
+            { name: 'Chicken Enchilada Casserole', price: 1.55 },
+            { name: 'Blackened Mahi Mahi over Cilantro Lime Brown Rice', price: 4.02 },
+            { name: 'Blackened Chicken Alfredo', price: 2.25 },
+            { name: 'Blackened Chicken with Fingerling Potatoes', price: 3.76 },
+            { name: 'BBQ Brisket Mac', price: 2.90 },
+            { name: 'Chicken & Italian Sausage over Pasta', price: 2.35 },
+            { name: 'Chicken Madeira', price: 2.61 },
+            { name: 'Dirty Rice', price: 2.92 },
+            { name: 'Glazed Beef Meatloaf', price: 2.39 },
+            { name: 'Greek Chicken Bowl', price: 1.79 },
+            { name: 'Green Chile Chicken over Jasmine Rice', price: 1.49 },
+            { name: 'Grilled Chicken over Cheesy Bacon Broccoli Casserole', price: 2.35 },
+            { name: 'Grilled Salmon', price: 4.98 },
+            { name: 'Indian Chicken Curry over Jasmine Rice', price: 1.52 },
+            { name: 'Korean Beef Tenderloin BBQ', price: 3.98 },
+            { name: 'Parmesan Crusted Chop Steak', price: 2.77 },
+            { name: 'Ranch Seasoned Chicken with Mozzarella and Bacon', price: 3.12 },
+            { name: 'Roasted Turkey with Cajun Butter', price: 3.22 },
+            { name: 'Rustic Chicken Parmesan', price: 2.01 },
+            { name: 'Salisbury Steak', price: 2.97 },
+            { name: 'Seared Beef Tenderloin', price: 5.70 },
+            { name: 'Lemon Herb Chicken with Roasted Baby Carrots', price: 3.62 },
+            { name: 'Texas Style Turkey Chili Bowl', price: 2.31 },
+            { name: 'Turkey Ragu over Spaghetti Squash', price: 2.54 },
+            { name: 'Zed Strips over Mac n Cheese', price: 2.52 },
+            { name: 'Zedrics Texas Style Turkey Chili Mac Bowl', price: 1.89 },
+            { name: 'Chocolate Chip Zucchini Muffin', price: 0.84 },
+            { name: 'Peanut Butter Chocolate Chip Chew Snack', price: 1.34 },
+            { name: '1/2# Turkey Chorizo', price: 2.22 },
+            { name: '1/2# Green Chile Chicken', price: 1.98 },
+            { name: '1/2# Grilled Chicken', price: 3.45 },
+            { name: 'Gluten Free Chicken Zedstrips with Dijonnaise 1/2#', price: 3.93 },
+            { name: '1/2# Baked Chicken', price: 3.16 }
+        ];
+
+        let meals = [...MEALS_DATA];
+
+        function initializeInventory() {
+            const container = document.getElementById('inventory-container');
+            container.innerHTML = '';
+
+            Object.keys(INVENTORY_DATA).forEach(sectionName => {
+                const section = createSection(sectionName, INVENTORY_DATA[sectionName]);
+                container.appendChild(section);
+            });
+
+            createMealsSection();
+        }
+
+        function createItemRow(item, sectionId) {
+            const row = document.createElement('tr');
+            row.className = 'item-row';
+            row.setAttribute('data-price', item.price);
+            row.setAttribute('data-section', sectionId);
+
+            row.innerHTML = `
+                <td><div class="item-number">${item.itemNumber || ''}</div></td>
+                <td><div class="item-name">${item.name}</div><div class="item-brand">${item.brand || ''}</div></td>
+                <td>${item.pack || ''}</td>
+                <td class="align-center">$${item.price.toFixed(2)}</td>
+                <td><input type="number" step="0.01" min="0" oninput="updateTotals()"></td>
+                <td class="total">$0.00</td>
+                <td><button class="delete-btn" onclick="deleteItemRow(this)">X</button></td>
+            `;
+            return row;
+        }
+
+        function createSection(sectionName, items) {
+            const sectionId = sectionName.replace(/[^a-zA-Z0-9]/g, '_');
+            const section = document.createElement('div');
+            section.className = 'section';
+            section.id = `section-${sectionId}`;
+
+            const header = document.createElement('div');
+            header.className = 'section-header';
+            header.onclick = () => toggleSection(section, header);
+
+            const headerInfo = document.createElement('div');
+            headerInfo.className = 'section-header-info';
+            headerInfo.innerHTML = `
+                <div class="section-header-title">${sectionName}</div>
+                <div class="section-header-meta" id="meta-${sectionId}">${items.length} items | Total: $0.00</div>
+            `;
+
+            const toggle = document.createElement('div');
+            toggle.className = 'section-toggle';
+            toggle.textContent = '▼';
+
+            header.appendChild(headerInfo);
+            header.appendChild(toggle);
+
+            const content = document.createElement('div');
+            content.className = 'section-content expanded';
+
+            const addBtn = document.createElement('button');
+            addBtn.className = 'add-btn';
+            addBtn.textContent = '+ Add Item';
+            addBtn.onclick = (e) => { e.stopPropagation(); addNewItem(sectionId); };
+            content.appendChild(addBtn);
+
+            const table = document.createElement('table');
+            table.className = 'section-table';
+            table.id = `table-${sectionId}`;
+
+            const thead = document.createElement('thead');
+            thead.innerHTML = `<tr>
+                <th style="width:80px;">Item #</th>
+                <th>Name / Brand</th>
+                <th style="width:80px;">Pack/Size</th>
+                <th style="width:80px;">Price</th>
+                <th style="width:80px;">On Hand</th>
+                <th style="width:80px;">Total</th>
+                <th style="width:50px;"></th>
+            </tr>`;
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            tbody.id = `tbody-${sectionId}`;
+            items.forEach(item => {
+                tbody.appendChild(createItemRow(item, sectionId));
+            });
+
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'section-total-row';
+            totalRow.innerHTML = `
+                <td colspan="5" style="text-align:right;padding:12px;"><strong>Section Total:</strong></td>
+                <td id="section-total-${sectionId}" class="total">$0.00</td>
+                <td></td>
+            `;
+            tbody.appendChild(totalRow);
+
+            table.appendChild(tbody);
+            content.appendChild(table);
+            section.appendChild(header);
+            section.appendChild(content);
+            return section;
+        }
+
+        function toggleSection(section, header) {
+            const content = section.querySelector('.section-content');
+            const toggle = header.querySelector('.section-toggle');
+            content.classList.toggle('expanded');
+            toggle.textContent = content.classList.contains('expanded') ? '▼' : '▶';
+        }
+
+        function deleteItemRow(btn) {
+            if (confirm('Remove this item?')) {
+                btn.closest('tr').remove();
+                updateTotals();
+            }
+        }
+
+        function addNewItem(sectionId) {
+            const name = prompt('Item name:');
+            if (!name) return;
+            const brand = prompt('Brand (or leave blank):') || '';
+            const pack = prompt('Pack / Size (or leave blank):') || '';
+            const priceStr = prompt('Price per case:');
+            if (priceStr === null) return;
+            const price = parseFloat(priceStr) || 0;
+            const itemNum = prompt('Item # (or leave blank):') || '';
+
+            const item = { itemNumber: itemNum, name, brand, pack, price };
+            const tbody = document.getElementById(`tbody-${sectionId}`);
+            const totalRow = tbody.querySelector('.section-total-row');
+            tbody.insertBefore(createItemRow(item, sectionId), totalRow);
+            updateTotals();
+        }
+
+        function createMealsSection() {
+            const container = document.getElementById('inventory-container');
+
+            const section = document.createElement('div');
+            section.className = 'section';
+            section.id = 'section-meals';
+
+            const header = document.createElement('div');
+            header.className = 'section-header';
+            header.onclick = () => toggleSection(section, header);
+
+            const headerInfo = document.createElement('div');
+            headerInfo.className = 'section-header-info';
+            headerInfo.innerHTML = `
+                <div class="section-header-title">Front of House Meals</div>
+                <div class="section-header-meta" id="meta-meals">${meals.length} meals | Total: $0.00</div>
+            `;
+
+            const toggle = document.createElement('div');
+            toggle.className = 'section-toggle';
+            toggle.textContent = '▼';
+
+            header.appendChild(headerInfo);
+            header.appendChild(toggle);
+
+            const content = document.createElement('div');
+            content.className = 'section-content expanded';
+
+            const addBtn = document.createElement('button');
+            addBtn.className = 'add-btn';
+            addBtn.textContent = '+ Add New Meal';
+            addBtn.onclick = (e) => { e.stopPropagation(); addNewMeal(); };
+            content.appendChild(addBtn);
+
+            const table = document.createElement('table');
+            table.className = 'meals-table';
+            table.id = 'meals-table';
+
+            const thead = document.createElement('thead');
+            thead.innerHTML = `<tr>
+                <th>Meal Name</th>
+                <th style="width:100px;">Price</th>
+                <th style="width:100px;">Quantity</th>
+                <th style="width:120px;">Total</th>
+                <th style="width:50px;"></th>
+            </tr>`;
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            tbody.id = 'meals-tbody';
+            meals.forEach(meal => {
+                tbody.appendChild(createMealRow(meal));
+            });
+
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'section-total-row';
+            totalRow.innerHTML = `
+                <td colspan="3" style="text-align:right;padding:12px;"><strong>Section Total:</strong></td>
+                <td id="section-total-meals" class="total">$0.00</td>
+                <td></td>
+            `;
+            tbody.appendChild(totalRow);
+
+            table.appendChild(tbody);
+            content.appendChild(table);
+            section.appendChild(header);
+            section.appendChild(content);
+            container.appendChild(section);
+        }
+
+        function createMealRow(meal) {
+            const row = document.createElement('tr');
+            row.className = 'meal-row';
+
+            row.innerHTML = `
+                <td><input type="text" value="${meal.name}" class="meal-input"></td>
+                <td><input type="number" step="0.01" min="0" value="${meal.price.toFixed(2)}" class="meal-input" oninput="updateTotals()"></td>
+                <td><input type="number" step="1" min="0" class="meal-input" oninput="updateTotals()"></td>
+                <td class="total">$0.00</td>
+                <td><button class="delete-btn" onclick="deleteMealRow(this)">X</button></td>
+            `;
+            return row;
+        }
+
+        function deleteMealRow(btn) {
+            if (confirm('Remove this meal?')) {
+                btn.closest('tr').remove();
+                updateTotals();
+            }
+        }
+
+        function addNewMeal() {
+            const tbody = document.getElementById('meals-tbody');
+            const totalRow = tbody.querySelector('.section-total-row');
+            tbody.insertBefore(createMealRow({ name: 'New Meal', price: 0 }), totalRow);
+            updateTotals();
+        }
+
+        function updateTotals() {
+            let grandTotal = 0;
+
+            // Calculate supply section totals by reading the DOM directly
+            document.querySelectorAll('.section-table').forEach(table => {
+                let sectionTotal = 0;
+                let itemCount = 0;
+                const tbody = table.querySelector('tbody');
+                const sectionId = tbody.id.replace('tbody-', '');
+
+                tbody.querySelectorAll('.item-row').forEach(row => {
+                    itemCount++;
+                    const price = parseFloat(row.getAttribute('data-price')) || 0;
+                    const input = row.querySelector('input[type="number"]');
+                    const onHand = parseFloat(input.value) || 0;
+                    const total = price * onHand;
+                    row.querySelector('.total').textContent = '$' + total.toFixed(2);
+                    sectionTotal += total;
+                });
+
+                const sectionTotalCell = document.getElementById(`section-total-${sectionId}`);
+                if (sectionTotalCell) sectionTotalCell.textContent = '$' + sectionTotal.toFixed(2);
+
+                const meta = document.getElementById(`meta-${sectionId}`);
+                if (meta) meta.textContent = `${itemCount} items | Total: $${sectionTotal.toFixed(2)}`;
+
+                grandTotal += sectionTotal;
+            });
+
+            // Calculate meals total
+            let mealTotal = 0;
+            let mealCount = 0;
+            document.querySelectorAll('#meals-tbody .meal-row').forEach(row => {
+                mealCount++;
+                const inputs = row.querySelectorAll('input[type="number"]');
+                const price = parseFloat(inputs[0].value) || 0;
+                const qty = parseFloat(inputs[1].value) || 0;
+                const total = price * qty;
+                row.querySelector('.total').textContent = '$' + total.toFixed(2);
+                mealTotal += total;
+            });
+
+            const mealsTotalCell = document.getElementById('section-total-meals');
+            if (mealsTotalCell) mealsTotalCell.textContent = '$' + mealTotal.toFixed(2);
+
+            const mealsMeta = document.getElementById('meta-meals');
+            if (mealsMeta) mealsMeta.textContent = `${mealCount} meals | Total: $${mealTotal.toFixed(2)}`;
+
+            grandTotal += mealTotal;
+            document.getElementById('grandTotal').textContent = grandTotal.toFixed(2);
+        }
+
+        function clearAll() {
+            if (confirm('Are you sure you want to clear all quantities? This cannot be undone.')) {
+                document.querySelectorAll('input[type="number"]').forEach(input => {
+                    if (!input.closest('.meal-row') || input === input.parentElement.parentElement.querySelectorAll('input[type="number"]')[1]) {
+                        // For supply rows: clear the on-hand input
+                        // For meal rows: clear only the quantity (3rd column), not price
+                        input.value = '';
+                    }
+                });
+                // More targeted: clear supply on-hand and meal quantities only
+                document.querySelectorAll('.item-row input[type="number"]').forEach(i => i.value = '');
+                document.querySelectorAll('.meal-row').forEach(row => {
+                    const qtyInput = row.querySelectorAll('input[type="number"]')[1];
+                    if (qtyInput) qtyInput.value = '';
+                });
+                updateTotals();
+            }
+        }
+
+        // ==================== FIREBASE SETUP ====================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUveUlxrNDIU4yDUpbzjv8-X625S-l0Po",
+            authDomain: "zedrics-production-hub.firebaseapp.com",
+            databaseURL: "https://zedrics-production-hub-default-rtdb.firebaseio.com",
+            projectId: "zedrics-production-hub",
+            storageBucket: "zedrics-production-hub.firebasestorage.app",
+            messagingSenderId: "1000819775934",
+            appId: "1:1000819775934:web:6a0f14f54f797b092841ef"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        let currentMonthKey = '';
+        let inventoryRef = null;
+        let isSyncing = false; // Prevent echo loops
+
+        function getMonthKey() {
+            return document.getElementById('monthSelect').value; // e.g. "2026-03"
+        }
+
+        function setSyncStatus(connected) {
+            const el = document.getElementById('syncStatus');
+            if (connected) {
+                el.innerHTML = '<span style="color:#4CAF50;">&#9679;</span> Live sync on';
+            } else {
+                el.innerHTML = '<span style="color:#ff6b6b;">&#9679;</span> Connecting...';
+            }
+        }
+
+        // Build a unique key for each item row based on section + item identifier
+        function getItemKey(sectionId, row) {
+            const itemNum = row.querySelector('.item-number')?.textContent?.trim();
+            const itemName = row.querySelector('.item-name')?.textContent?.trim();
+            // Use item number if available, otherwise sanitize name
+            const raw = itemNum || itemName || 'unknown';
+            return raw.replace(/[.#$\/\[\]]/g, '_').replace(/\s+/g, '_').substring(0, 80);
+        }
+
+        // Save all current quantities to Firebase
+        function saveToFirebase() {
+            if (!inventoryRef || isSyncing) return;
+
+            const data = { supplies: {}, meals: {} };
+
+            // Gather supply section quantities
+            document.querySelectorAll('.section-table').forEach(table => {
+                const tbody = table.querySelector('tbody');
+                const sectionId = tbody.id.replace('tbody-', '');
+                data.supplies[sectionId] = {};
+
+                tbody.querySelectorAll('.item-row').forEach((row, idx) => {
+                    const key = getItemKey(sectionId, row) + '_' + idx;
+                    const input = row.querySelector('input[type="number"]');
+                    const val = parseFloat(input.value) || 0;
+                    if (val !== 0) {
+                        data.supplies[sectionId][key] = val;
+                    }
+                });
+            });
+
+            // Gather meal quantities
+            document.querySelectorAll('#meals-tbody .meal-row').forEach((row, idx) => {
+                const nameInput = row.querySelector('input[type="text"]');
+                const inputs = row.querySelectorAll('input[type="number"]');
+                const price = parseFloat(inputs[0].value) || 0;
+                const qty = parseFloat(inputs[1].value) || 0;
+                const name = nameInput.value || 'Meal ' + idx;
+                const key = name.replace(/[.#$\/\[\]]/g, '_').substring(0, 80) + '_' + idx;
+                data.meals[key] = { name: name, price: price, qty: qty };
+            });
+
+            inventoryRef.set(data);
+        }
+
+        // Load quantities from Firebase into the DOM
+        function loadFromFirebase(snapshot) {
+            isSyncing = true;
+            const data = snapshot.val();
+            if (!data) { isSyncing = false; return; }
+
+            // Load supply quantities
+            if (data.supplies) {
+                document.querySelectorAll('.section-table').forEach(table => {
+                    const tbody = table.querySelector('tbody');
+                    const sectionId = tbody.id.replace('tbody-', '');
+                    const sectionData = data.supplies[sectionId];
+                    if (!sectionData) return;
+
+                    tbody.querySelectorAll('.item-row').forEach((row, idx) => {
+                        const key = getItemKey(sectionId, row) + '_' + idx;
+                        const input = row.querySelector('input[type="number"]');
+                        if (sectionData[key] !== undefined) {
+                            input.value = sectionData[key];
+                        }
+                    });
+                });
+            }
+
+            // Load meal quantities
+            if (data.meals) {
+                document.querySelectorAll('#meals-tbody .meal-row').forEach((row, idx) => {
+                    const nameInput = row.querySelector('input[type="text"]');
+                    const inputs = row.querySelectorAll('input[type="number"]');
+                    const name = nameInput.value || 'Meal ' + idx;
+                    const key = name.replace(/[.#$\/\[\]]/g, '_').substring(0, 80) + '_' + idx;
+                    if (data.meals[key]) {
+                        inputs[0].value = data.meals[key].price || 0;
+                        inputs[1].value = data.meals[key].qty || 0;
+                    }
+                });
+            }
+
+            updateTotals();
+            isSyncing = false;
+        }
+
+        // Connect to Firebase for the selected month
+        function connectToMonth() {
+            const monthKey = getMonthKey();
+            if (monthKey === currentMonthKey) return;
+
+            // Detach previous listener
+            if (inventoryRef) {
+                inventoryRef.off();
+            }
+
+            currentMonthKey = monthKey;
+            inventoryRef = db.ref('inventory/' + monthKey);
+
+            // Listen for real-time changes
+            inventoryRef.on('value', (snapshot) => {
+                loadFromFirebase(snapshot);
+                setSyncStatus(true);
+            });
+        }
+
+        // Hook into input changes to save to Firebase
+        function attachFirebaseListeners() {
+            document.addEventListener('input', (e) => {
+                if (e.target.matches('input[type="number"]') || e.target.matches('input[type="text"]')) {
+                    updateTotals();
+                    saveToFirebase();
+                }
+            });
+        }
+
+        // Override delete/add functions to also trigger Firebase save
+        const origDeleteItemRow = deleteItemRow;
+        deleteItemRow = function(btn) {
+            if (confirm('Remove this item?')) {
+                btn.closest('tr').remove();
+                updateTotals();
+                saveToFirebase();
+            }
+        };
+
+        const origDeleteMealRow = deleteMealRow;
+        deleteMealRow = function(btn) {
+            if (confirm('Remove this meal?')) {
+                btn.closest('tr').remove();
+                updateTotals();
+                saveToFirebase();
+            }
+        };
+
+        // Month selector change: clear inputs and load new month
+        document.getElementById('monthSelect').addEventListener('change', () => {
+            // Clear all inputs first
+            document.querySelectorAll('.item-row input[type="number"]').forEach(i => i.value = '');
+            document.querySelectorAll('.meal-row').forEach(row => {
+                const qtyInput = row.querySelectorAll('input[type="number"]')[1];
+                if (qtyInput) qtyInput.value = '';
+            });
+            updateTotals();
+            connectToMonth();
+        });
+
+        // Monitor connection state
+        db.ref('.info/connected').on('value', (snap) => {
+            setSyncStatus(snap.val() === true);
+        });
+
+        // Initialize
+        const now = new Date();
+        const monthStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        document.getElementById('monthSelect').value = monthStr;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initializeInventory();
+            updateTotals();
+            attachFirebaseListeners();
+            connectToMonth();
+        });
+    </script>
+</body>
+</html>
