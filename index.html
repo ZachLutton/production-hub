@@ -152,10 +152,73 @@
     .header-actions { gap: 4px; }
     .btn { padding: 6px 10px; font-size: 12px; }
   }
+
+  /* ===== LOGIN SCREEN ===== */
+  #login-screen {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #1a1a2e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+  }
+  .login-box {
+      background: white;
+      border-radius: 12px;
+      padding: 40px 30px;
+      text-align: center;
+      width: 320px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  .login-box h1 {
+      color: #1a1a2e;
+      font-size: 22px;
+      margin-bottom: 6px;
+  }
+  .login-box p {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 24px;
+  }
+  .pin-input {
+      width: 180px;
+      font-size: 32px;
+      text-align: center;
+      letter-spacing: 12px;
+      padding: 12px;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      outline: none;
+  }
+  .pin-input:focus {
+      border-color: #4a90d9;
+  }
+  .pin-error {
+      color: #e74c3c;
+      font-size: 14px;
+      margin-top: 12px;
+      min-height: 20px;
+  }
+  #main-content {
+      display: none;
+  }
 </style>
 </head>
 <body>
 
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+    <div class="login-box">
+        <h1>Zedric's Production Hub</h1>
+        <p>Enter team PIN to continue</p>
+        <input type="password" id="pin-input" class="pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autofocus>
+        <div class="pin-error" id="pin-error"></div>
+    </div>
+</div>
+
+<!-- MAIN CONTENT (hidden until login) -->
+<div id="main-content">
 <div class="header">
   <div class="header-left">
     <h1>Zedric's Production Hub</h1>
@@ -190,6 +253,7 @@
     <div id="historyContent"></div>
   </div>
 </div>
+</div><!-- end main-content -->
 
 <script>
 const PRODUCTION_DATA = {
@@ -284,11 +348,7 @@ const dishLibraryRef = db.ref('dishLibrary');
 let isRemoteUpdate = false;
 let syncTimeout = null;
 
-// Sign in anonymously so Firebase rules can require auth
-// This is silent and automatic — users never see a login screen
-auth.signInAnonymously().catch(err => {
-  console.warn('Anonymous auth failed:', err.message);
-});
+// Auth is now handled by PIN login below
 
 // Firebase doesn't allow "/", ".", "#", "$", "[", "]" in keys
 // Convert day labels like "Tuesday 3/17" to "Tuesday 3-17" for Firebase
@@ -1346,7 +1406,59 @@ function viewHistoryWeek(weekKey) {
   });
 }
 
-init();
+// ==================== PIN LOGIN ====================
+const TEAM_PIN = '7590';
+const LOGIN_KEY = 'zedrics_hub_login';
+const LOGIN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+function isLoginValid() {
+    try {
+        const stored = localStorage.getItem(LOGIN_KEY);
+        if (!stored) return false;
+        const data = JSON.parse(stored);
+        return data.pin === TEAM_PIN && (Date.now() - data.time) < LOGIN_DURATION;
+    } catch(e) { return false; }
+}
+
+function saveLogin() {
+    localStorage.setItem(LOGIN_KEY, JSON.stringify({ pin: TEAM_PIN, time: Date.now() }));
+}
+
+function showApp() {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('main-content').style.display = 'block';
+    init();
+}
+
+function handleLogin() {
+    auth.signInAnonymously().then(() => {
+        saveLogin();
+        showApp();
+    }).catch(err => {
+        document.getElementById('pin-error').textContent = 'Login error: ' + err.message;
+    });
+}
+
+document.getElementById('pin-input').addEventListener('input', function() {
+    document.getElementById('pin-error').textContent = '';
+    if (this.value.length === 4) {
+        if (this.value === TEAM_PIN) {
+            handleLogin();
+        } else {
+            document.getElementById('pin-error').textContent = 'Incorrect PIN';
+            this.value = '';
+        }
+    }
+});
+
+// On page load: check if already logged in within 24h
+if (isLoginValid()) {
+    auth.signInAnonymously().then(() => {
+        showApp();
+    }).catch(() => {
+        localStorage.removeItem(LOGIN_KEY);
+    });
+}
 </script>
 </body>
 </html>
