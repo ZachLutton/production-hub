@@ -6,6 +6,7 @@
     <title>Zedric's Monthly Inventory</title>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -360,9 +361,72 @@
         .align-center {
             text-align: center;
         }
+
+        /* ===== LOGIN SCREEN ===== */
+        #login-screen {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #2d5016;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .login-box {
+            background: white;
+            border-radius: 12px;
+            padding: 40px 30px;
+            text-align: center;
+            width: 320px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .login-box h1 {
+            color: #2d5016;
+            font-size: 22px;
+            margin-bottom: 6px;
+        }
+        .login-box p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+        .pin-input {
+            width: 180px;
+            font-size: 32px;
+            text-align: center;
+            letter-spacing: 12px;
+            padding: 12px;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            outline: none;
+        }
+        .pin-input:focus {
+            border-color: #2d5016;
+        }
+        .pin-error {
+            color: #e74c3c;
+            font-size: 14px;
+            margin-top: 12px;
+            min-height: 20px;
+        }
+        #main-content {
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <!-- LOGIN SCREEN -->
+    <div id="login-screen">
+        <div class="login-box">
+            <h1>Zedric's Inventory</h1>
+            <p>Enter team PIN to continue</p>
+            <input type="password" id="pin-input" class="pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autofocus>
+            <div class="pin-error" id="pin-error"></div>
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT (hidden until login) -->
+    <div id="main-content">
     <div class="header">
         <h1>Zedric's Monthly Inventory</h1>
         <div class="header-controls">
@@ -380,6 +444,7 @@
     <div class="grand-total-section">
         GRAND TOTAL: $<span id="grandTotal">0.00</span>
     </div>
+    </div><!-- end main-content -->
 
     <script>
         const INVENTORY_DATA = {
@@ -1051,10 +1116,14 @@
 
         // Save a single field to Firebase
         function saveSingleField(fbKey, value) {
-            if (!monthRef) return;
+            if (!monthRef) { console.warn('[Inventory] saveSingleField: monthRef is null!'); return; }
             const update = {};
             update[fbKey] = value;
-            monthRef.update(update);
+            monthRef.update(update).then(() => {
+                console.log('[Inventory] Saved:', fbKey, '=', value);
+            }).catch(err => {
+                console.error('[Inventory] Save failed:', fbKey, err);
+            });
         }
 
         // Save a meal's full data (qty + price) to Firebase
@@ -1074,6 +1143,7 @@
         // Load ALL data from Firebase snapshot into the DOM
         function loadAllFromFirebase(snapshot) {
             const data = snapshot.val();
+            console.log('[Inventory] Firebase data received:', data ? Object.keys(data).length + ' keys' : 'null');
             if (!data) return;
 
             // Build a lookup of fbkey -> row for supplies
@@ -1130,11 +1200,14 @@
 
             currentMonthKey = monthKey;
             monthRef = db.ref('inventory/' + monthKey);
+            console.log('[Inventory] Connected to Firebase path: inventory/' + monthKey);
 
             // Listen for ALL changes and apply them
             monthRef.on('value', (snapshot) => {
                 loadAllFromFirebase(snapshot);
                 setSyncStatus(true);
+            }, (err) => {
+                console.error('[Inventory] Firebase listen error:', err);
             });
         }
 
@@ -1215,18 +1288,90 @@
             setSyncStatus(snap.val() === true);
         });
 
-        // Initialize
-        const now = new Date();
-        const monthStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-        document.getElementById('monthSelect').value = monthStr;
+        // ==================== PIN LOGIN ====================
+        const TEAM_PIN = '7590';
+        const LOGIN_KEY = 'zedrics_inv_login';
+        const LOGIN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
-        window.addEventListener('DOMContentLoaded', () => {
+        function isLoginValid() {
+            try {
+                const stored = localStorage.getItem(LOGIN_KEY);
+                if (!stored) return false;
+                const data = JSON.parse(stored);
+                return data.pin === TEAM_PIN && (Date.now() - data.time) < LOGIN_DURATION;
+            } catch(e) { return false; }
+        }
+
+        function saveLogin() {
+            localStorage.setItem(LOGIN_KEY, JSON.stringify({ pin: TEAM_PIN, time: Date.now() }));
+        }
+
+        function showApp() {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+            startApp();
+        }
+
+        function handleLogin() {
+            // Sign in anonymously with Firebase Auth
+            firebase.auth().signInAnonymously().then(() => {
+                saveLogin();
+                showApp();
+                console.log('[Inventory] Logged in successfully');
+            }).catch(err => {
+                document.getElementById('pin-error').textContent = 'Login error: ' + err.message;
+                console.error('[Inventory] Auth error:', err);
+            });
+        }
+
+        // PIN input handler
+        document.getElementById('pin-input').addEventListener('input', function() {
+            document.getElementById('pin-error').textContent = '';
+            if (this.value.length === 4) {
+                if (this.value === TEAM_PIN) {
+                    handleLogin();
+                } else {
+                    document.getElementById('pin-error').textContent = 'Incorrect PIN';
+                    this.value = '';
+                }
+            }
+        });
+
+        // Initialize the main app (called after successful login)
+        function startApp() {
+            const now = new Date();
+            const monthStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+            document.getElementById('monthSelect').value = monthStr;
+
             initializeInventory();
             assignFirebaseKeys();
             updateTotals();
             attachFirebaseListeners();
             connectToMonth();
-        });
+            console.log('[Inventory] App started, month=' + monthStr);
+        }
+
+        // On page load: check if already logged in
+        function initPage() {
+            if (isLoginValid()) {
+                // Already logged in within 24h — re-authenticate silently
+                firebase.auth().signInAnonymously().then(() => {
+                    showApp();
+                    console.log('[Inventory] Auto-login from saved session');
+                }).catch(err => {
+                    // Token expired or error — show login screen
+                    localStorage.removeItem(LOGIN_KEY);
+                    console.error('[Inventory] Auto-login failed:', err);
+                });
+            }
+            // Otherwise login screen is already visible
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initPage);
+        } else {
+            initPage();
+        }
     </script>
 </body>
 </html>
