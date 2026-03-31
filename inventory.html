@@ -1001,11 +1001,12 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         let currentMonthKey = '';
-        let inventoryRef = null;
-        let isSyncing = false; // Prevent echo loops
+        let monthRef = null;
+        let activeListeners = []; // track child listeners so we can detach
+        let suppressSync = {}; // keys currently being edited locally
 
         function getMonthKey() {
-            return document.getElementById('monthSelect').value; // e.g. "2026-03"
+            return document.getElementById('monthSelect').value;
         }
 
         function setSyncStatus(connected) {
@@ -1017,150 +1018,194 @@
             }
         }
 
-        // Build a unique key for each item row based on section + item identifier
-        function getItemKey(sectionId, row) {
+        // Build a stable unique key for a supply item row
+        function getSupplyKey(sectionId, row, idx) {
             const itemNum = row.querySelector('.item-number')?.textContent?.trim();
             const itemName = row.querySelector('.item-name')?.textContent?.trim();
-            // Use item number if available, otherwise sanitize name
-            const raw = itemNum || itemName || 'unknown';
-            return raw.replace(/[.#$\/\[\]]/g, '_').replace(/\s+/g, '_').substring(0, 80);
+            const raw = itemNum || itemName || 'item';
+            const sanitized = raw.replace(/[.#$\/\[\]]/g, '_').replace(/\s+/g, '_').substring(0, 60);
+            return 's_' + sectionId + '_' + sanitized + '_' + idx;
         }
 
-        // Save all current quantities to Firebase
-        function saveToFirebase() {
-            if (!inventoryRef || isSyncing) return;
+        // Build a stable unique key for a meal row
+        function getMealKey(row, idx) {
+            const nameInput = row.querySelector('input[type="text"]');
+            const name = (nameInput?.value || 'meal').substring(0, 40);
+            const sanitized = name.replace(/[.#$\/\[\]]/g, '_').replace(/\s+/g, '_');
+            return 'm_' + sanitized + '_' + idx;
+        }
 
-            const data = { supplies: {}, meals: {} };
-
-            // Gather supply section quantities
+        // Assign data-fbkey attributes to all rows so we can match them
+        function assignFirebaseKeys() {
             document.querySelectorAll('.section-table').forEach(table => {
                 const tbody = table.querySelector('tbody');
                 const sectionId = tbody.id.replace('tbody-', '');
-                data.supplies[sectionId] = {};
-
                 tbody.querySelectorAll('.item-row').forEach((row, idx) => {
-                    const key = getItemKey(sectionId, row) + '_' + idx;
-                    const input = row.querySelector('input[type="number"]');
-                    const val = parseFloat(input.value) || 0;
-                    if (val !== 0) {
-                        data.supplies[sectionId][key] = val;
-                    }
+                    row.setAttribute('data-fbkey', getSupplyKey(sectionId, row, idx));
                 });
             });
-
-            // Gather meal quantities
             document.querySelectorAll('#meals-tbody .meal-row').forEach((row, idx) => {
-                const nameInput = row.querySelector('input[type="text"]');
-                const inputs = row.querySelectorAll('input[type="number"]');
-                const price = parseFloat(inputs[0].value) || 0;
-                const qty = parseFloat(inputs[1].value) || 0;
-                const name = nameInput.value || 'Meal ' + idx;
-                const key = name.replace(/[.#$\/\[\]]/g, '_').substring(0, 80) + '_' + idx;
-                data.meals[key] = { name: name, price: price, qty: qty };
+                row.setAttribute('data-fbkey', getMealKey(row, idx));
             });
-
-            inventoryRef.set(data);
         }
 
-        // Load quantities from Firebase into the DOM
-        function loadFromFirebase(snapshot) {
-            isSyncing = true;
+        // Save a single field to Firebase
+        function saveSingleField(fbKey, value) {
+            if (!monthRef) return;
+            const update = {};
+            update[fbKey] = value;
+            monthRef.update(update);
+        }
+
+        // Save a meal's full data (qty + price) to Firebase
+        function saveMealField(fbKey, data) {
+            if (!monthRef) return;
+            const update = {};
+            update[fbKey] = data;
+            monthRef.update(update);
+        }
+
+        // Delete a key from Firebase
+        function removeFirebaseKey(fbKey) {
+            if (!monthRef) return;
+            monthRef.child(fbKey).remove();
+        }
+
+        // Load ALL data from Firebase snapshot into the DOM
+        function loadAllFromFirebase(snapshot) {
             const data = snapshot.val();
-            if (!data) { isSyncing = false; return; }
+            if (!data) return;
 
-            // Load supply quantities
-            if (data.supplies) {
-                document.querySelectorAll('.section-table').forEach(table => {
-                    const tbody = table.querySelector('tbody');
-                    const sectionId = tbody.id.replace('tbody-', '');
-                    const sectionData = data.supplies[sectionId];
-                    if (!sectionData) return;
+            // Build a lookup of fbkey -> row for supplies
+            const supplyRows = {};
+            document.querySelectorAll('.item-row').forEach(row => {
+                const key = row.getAttribute('data-fbkey');
+                if (key) supplyRows[key] = row;
+            });
 
-                    tbody.querySelectorAll('.item-row').forEach((row, idx) => {
-                        const key = getItemKey(sectionId, row) + '_' + idx;
-                        const input = row.querySelector('input[type="number"]');
-                        if (sectionData[key] !== undefined) {
-                            input.value = sectionData[key];
-                        }
-                    });
-                });
-            }
+            // Build a lookup for meal rows
+            const mealRows = {};
+            document.querySelectorAll('#meals-tbody .meal-row').forEach(row => {
+                const key = row.getAttribute('data-fbkey');
+                if (key) mealRows[key] = row;
+            });
 
-            // Load meal quantities
-            if (data.meals) {
-                document.querySelectorAll('#meals-tbody .meal-row').forEach((row, idx) => {
-                    const nameInput = row.querySelector('input[type="text"]');
-                    const inputs = row.querySelectorAll('input[type="number"]');
-                    const name = nameInput.value || 'Meal ' + idx;
-                    const key = name.replace(/[.#$\/\[\]]/g, '_').substring(0, 80) + '_' + idx;
-                    if (data.meals[key]) {
-                        inputs[0].value = data.meals[key].price || 0;
-                        inputs[1].value = data.meals[key].qty || 0;
+            // Apply all values from Firebase
+            Object.keys(data).forEach(key => {
+                if (suppressSync[key]) return; // skip fields being actively edited
+
+                if (key.startsWith('s_') && supplyRows[key]) {
+                    const input = supplyRows[key].querySelector('input[type="number"]');
+                    const val = data[key];
+                    if (input && parseFloat(input.value || 0) !== parseFloat(val || 0)) {
+                        input.value = val || '';
                     }
-                });
-            }
+                } else if (key.startsWith('m_') && mealRows[key]) {
+                    const mealData = data[key];
+                    if (typeof mealData === 'object') {
+                        const inputs = mealRows[key].querySelectorAll('input[type="number"]');
+                        if (inputs[0] && parseFloat(inputs[0].value || 0) !== parseFloat(mealData.price || 0)) {
+                            inputs[0].value = mealData.price || '';
+                        }
+                        if (inputs[1] && parseFloat(inputs[1].value || 0) !== parseFloat(mealData.qty || 0)) {
+                            inputs[1].value = mealData.qty || '';
+                        }
+                    }
+                }
+            });
 
             updateTotals();
-            isSyncing = false;
         }
 
         // Connect to Firebase for the selected month
         function connectToMonth() {
             const monthKey = getMonthKey();
-            if (monthKey === currentMonthKey) return;
+            if (!monthKey) return;
+            if (monthKey === currentMonthKey && monthRef) return;
 
             // Detach previous listener
-            if (inventoryRef) {
-                inventoryRef.off();
+            if (monthRef) {
+                monthRef.off();
             }
 
             currentMonthKey = monthKey;
-            inventoryRef = db.ref('inventory/' + monthKey);
+            monthRef = db.ref('inventory/' + monthKey);
 
-            // Listen for real-time changes
-            inventoryRef.on('value', (snapshot) => {
-                loadFromFirebase(snapshot);
+            // Listen for ALL changes and apply them
+            monthRef.on('value', (snapshot) => {
+                loadAllFromFirebase(snapshot);
                 setSyncStatus(true);
             });
         }
 
-        // Hook into input changes to save to Firebase
+        // Attach input listeners for real-time per-field saving
         function attachFirebaseListeners() {
+            // When a supply item On Hand changes, save just that field
             document.addEventListener('input', (e) => {
-                if (e.target.matches('input[type="number"]') || e.target.matches('input[type="text"]')) {
+                const row = e.target.closest('.item-row');
+                if (row) {
+                    const fbKey = row.getAttribute('data-fbkey');
+                    if (fbKey) {
+                        const val = parseFloat(e.target.value) || 0;
+                        suppressSync[fbKey] = true;
+                        saveSingleField(fbKey, val);
+                        // Release suppression after a short delay
+                        setTimeout(() => { delete suppressSync[fbKey]; }, 1000);
+                    }
                     updateTotals();
-                    saveToFirebase();
+                    return;
+                }
+
+                const mealRow = e.target.closest('.meal-row');
+                if (mealRow) {
+                    const fbKey = mealRow.getAttribute('data-fbkey');
+                    if (fbKey) {
+                        const inputs = mealRow.querySelectorAll('input[type="number"]');
+                        const price = parseFloat(inputs[0].value) || 0;
+                        const qty = parseFloat(inputs[1].value) || 0;
+                        const nameInput = mealRow.querySelector('input[type="text"]');
+                        const name = nameInput?.value || '';
+                        suppressSync[fbKey] = true;
+                        saveMealField(fbKey, { name, price, qty });
+                        setTimeout(() => { delete suppressSync[fbKey]; }, 1000);
+                    }
+                    updateTotals();
+                    return;
                 }
             });
         }
 
-        // Override delete/add functions to also trigger Firebase save
+        // Override delete functions to also remove from Firebase
         const origDeleteItemRow = deleteItemRow;
         deleteItemRow = function(btn) {
             if (confirm('Remove this item?')) {
-                btn.closest('tr').remove();
+                const row = btn.closest('tr');
+                const fbKey = row.getAttribute('data-fbkey');
+                row.remove();
                 updateTotals();
-                saveToFirebase();
+                if (fbKey) removeFirebaseKey(fbKey);
             }
         };
 
         const origDeleteMealRow = deleteMealRow;
         deleteMealRow = function(btn) {
             if (confirm('Remove this meal?')) {
-                btn.closest('tr').remove();
+                const row = btn.closest('tr');
+                const fbKey = row.getAttribute('data-fbkey');
+                row.remove();
                 updateTotals();
-                saveToFirebase();
+                if (fbKey) removeFirebaseKey(fbKey);
             }
         };
 
         // Month selector change: clear inputs and load new month
         document.getElementById('monthSelect').addEventListener('change', () => {
-            // Clear all inputs first
             document.querySelectorAll('.item-row input[type="number"]').forEach(i => i.value = '');
             document.querySelectorAll('.meal-row').forEach(row => {
                 const qtyInput = row.querySelectorAll('input[type="number"]')[1];
                 if (qtyInput) qtyInput.value = '';
             });
+            currentMonthKey = ''; // force reconnect
             updateTotals();
             connectToMonth();
         });
@@ -1177,6 +1222,7 @@
 
         window.addEventListener('DOMContentLoaded', () => {
             initializeInventory();
+            assignFirebaseKeys();
             updateTotals();
             attachFirebaseListeners();
             connectToMonth();
