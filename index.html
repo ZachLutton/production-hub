@@ -1221,29 +1221,68 @@ const historyRef = db.ref('history');
 
 // Auto-save current week to history (called when new week data is loaded)
 function saveWeekToHistory() {
-  // Use the first day label as the week key (e.g. "Tuesday 3/17" → "2026-03-17")
-  const firstDay = sortedDays()[0];
-  if (!firstDay) return;
-  const weekKey = generateWeekKey(firstDay);
-  // Deep copy and pre-compute PPH for each dish so it's preserved in history
-  const snapshotData = JSON.parse(JSON.stringify(sanitizeKeys(PRODUCTION_DATA)));
-  Object.values(snapshotData).forEach(dayData => {
-    Object.values(dayData).forEach(stationData => {
-      if (stationData && Array.isArray(stationData.dishes)) {
+  // ALWAYS read from Firebase directly — never from local PRODUCTION_DATA
+  // This ensures we capture the team's actual work, not stale page data
+  dataRef.once('value').then(snapshot => {
+    const firebaseData = snapshot.val();
+    if (!firebaseData) { alert('No data in Firebase to save.'); return; }
+
+    // Unsanitize and fix arrays just like the listener does
+    const unsanitized = unsanitizeKeys(firebaseData);
+    const fixedData = fixFirebaseArrays(unsanitized);
+
+    // Sort days by date
+    const days = Object.keys(fixedData).sort((a, b) => {
+      const getDate = s => { const m = s.match(/(\d{1,2})[\/\-](\d{1,2})/); return m ? parseInt(m[1]) * 100 + parseInt(m[2]) : 0; };
+      return getDate(a) - getDate(b);
+    });
+    const firstDay = days[0];
+    if (!firstDay) { alert('No days found in data.'); return; }
+
+    // Safety check: count dishes with final counts
+    let totalDishes = 0;
+    let dishesWithFinals = 0;
+    Object.values(fixedData).forEach(dayData => {
+      Object.values(dayData).forEach(stationData => {
+        if (!stationData || !Array.isArray(stationData.dishes)) return;
         stationData.dishes.forEach(d => {
-          const pph = calcPPH(d);
-          if (pph !== null) d.storedPPH = pph;
+          totalDishes++;
+          if (d.finalCount && String(d.finalCount).trim() !== '') dishesWithFinals++;
         });
-      }
+      });
+    });
+
+    // Warn if no production data has been entered
+    if (dishesWithFinals === 0) {
+      const proceed = confirm('Warning: No final counts have been entered for any dish (' + totalDishes + ' dishes total). This looks like raw Queue data — the team may not have started production yet.\n\nSave anyway?');
+      if (!proceed) return;
+    }
+
+    // Pre-compute PPH for each dish
+    const snapshotData = JSON.parse(JSON.stringify(sanitizeKeys(fixedData)));
+    Object.values(snapshotData).forEach(dayData => {
+      Object.values(dayData).forEach(stationData => {
+        if (stationData && Array.isArray(stationData.dishes)) {
+          stationData.dishes.forEach(d => {
+            const pph = calcPPH(d);
+            if (pph !== null) d.storedPPH = pph;
+          });
+        }
+      });
+    });
+
+    const weekKey = generateWeekKey(firstDay);
+    const snapshot = {
+      weekLabel: firstDay.replace(/^(Tuesday|Wednesday|Monday|Thursday|Friday|Saturday|Sunday)\s*/, 'Week of '),
+      savedAt: new Date().toISOString(),
+      days: days.join(' & '),
+      data: snapshotData
+    };
+
+    historyRef.child(weekKey).set(snapshot).then(() => {
+      showSaveNotice('Week saved to history (' + dishesWithFinals + '/' + totalDishes + ' dishes with final counts)');
     });
   });
-  const snapshot = {
-    weekLabel: firstDay.replace(/^(Tuesday|Wednesday|Monday|Thursday|Friday|Saturday|Sunday)\s*/, 'Week of '),
-    savedAt: new Date().toISOString(),
-    days: sortedDays().join(' & '),
-    data: snapshotData
-  };
-  historyRef.child(weekKey).set(snapshot);
 }
 
 function generateWeekKey(dayLabel) {
@@ -1261,7 +1300,6 @@ function generateWeekKey(dayLabel) {
 // Save current week snapshot (can be triggered manually or during weekly update)
 function saveCurrentWeekSnapshot() {
   saveWeekToHistory();
-  showSaveNotice('Week saved to history');
 }
 
 function openHistory() {
