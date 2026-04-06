@@ -1272,14 +1272,14 @@ function saveWeekToHistory() {
     });
 
     const weekKey = generateWeekKey(firstDay);
-    const snapshot = {
+    const historyEntry = {
       weekLabel: firstDay.replace(/^(Tuesday|Wednesday|Monday|Thursday|Friday|Saturday|Sunday)\s*/, 'Week of '),
       savedAt: new Date().toISOString(),
       days: days.join(' & '),
       data: snapshotData
     };
 
-    historyRef.child(weekKey).set(snapshot).then(() => {
+    historyRef.child(weekKey).set(historyEntry).then(() => {
       showSaveNotice('Week saved to history (' + dishesWithFinals + '/' + totalDishes + ' dishes with final counts)');
     });
   });
