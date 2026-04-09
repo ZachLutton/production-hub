@@ -369,8 +369,38 @@ function unsanitizeKeys(data) {
   return original;
 }
 
+// Check if data looks like the blank HTML template (all dishes in Queue, no finals/times/station assignments)
+function isBlankTemplateData(data) {
+  let totalDishes = 0, dishesWithData = 0, dishesOutsideQueue = 0;
+  Object.values(data).forEach(dayData => {
+    if (!dayData || typeof dayData !== 'object') return;
+    Object.entries(dayData).forEach(([stationName, stationData]) => {
+      if (!stationData || !Array.isArray(stationData.dishes)) return;
+      stationData.dishes.forEach(d => {
+        if (!d) return;
+        totalDishes++;
+        if (stationName !== 'Queue') dishesOutsideQueue++;
+        if ((d.finalCount && String(d.finalCount).trim() !== '') ||
+            (d.startTime && String(d.startTime).trim() !== '') ||
+            (d.stopTime && String(d.stopTime).trim() !== '') ||
+            (d.notes && String(d.notes).trim() !== '')) {
+          dishesWithData++;
+        }
+      });
+    });
+  });
+  // It's template data if: dishes exist but none have been edited and none moved out of Queue
+  return totalDishes > 0 && dishesWithData === 0 && dishesOutsideQueue === 0;
+}
+
 function syncToFirebase() {
   if (isRemoteUpdate) return;
+  // SAFEGUARD: Never push blank template data to Firebase — this prevents the local HTML
+  // file from accidentally overwriting the team's real production data
+  if (isBlankTemplateData(PRODUCTION_DATA)) {
+    console.warn('BLOCKED: syncToFirebase() skipped — data looks like blank template (no finals, times, or station assignments)');
+    return;
+  }
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(() => {
     dataRef.set(sanitizeKeys(PRODUCTION_DATA));
@@ -493,7 +523,13 @@ let dishLibrarySeeded = false;
 dataRef.on('value', (snapshot) => {
   const remoteData = snapshot.val();
   if (!remoteData) {
-    // First time: push local data to Firebase
+    // Firebase is empty — only push local data if it has real team entries (not blank template)
+    if (isBlankTemplateData(PRODUCTION_DATA)) {
+      console.warn('BLOCKED: Firebase is empty but local data is blank template — NOT pushing. A fresh weekly update needs to be pushed by Claude/admin.');
+      lastKnownWeekKey = sortedDays()[0] || null;
+      render();
+      return;
+    }
     dataRef.set(sanitizeKeys(PRODUCTION_DATA));
     lastKnownWeekKey = sortedDays()[0] || null;
     setTimeout(seedDishLibrary, 1000);
