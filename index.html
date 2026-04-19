@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Zedric's Production Hub (Staging)</title>
+<title>Zedric's Production Hub</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -46,10 +46,10 @@
   .queue-station .station-header::before { content: '📋 '; }
   .empty-day-msg { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
   .station-header .pph-info { font-size: 12px; opacity: 0.9; font-weight: 500; text-align: right; }
-  .station-header .pph-live { font-size: 15px; font-weight: 700; }
   .station-header .operator-input { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; color: white; font-size: 12px; font-weight: 600; padding: 4px 8px; width: 120px; text-align: center; font-family: inherit; outline: none; }
   .station-header .operator-input::placeholder { color: rgba(255,255,255,0.6); }
   .station-header .operator-input:focus { background: rgba(255,255,255,0.3); border-color: white; }
+  .station-header .pph-live { font-size: 15px; font-weight: 700; }
 
   .dish-list { background: white; border-radius: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; }
 
@@ -214,7 +214,7 @@
 <div id="login-screen">
     <div class="login-box">
         <h1>Zedric's Production Hub</h1>
-        <p>Enter team or admin PIN to continue</p>
+        <p>Enter team PIN to continue</p>
         <input type="password" id="pin-input" class="pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autofocus>
         <div class="pin-error" id="pin-error"></div>
     </div>
@@ -224,7 +224,7 @@
 <div id="main-content">
 <div class="header">
   <div class="header-left">
-    <h1>Zedric's Production Hub <span style="background:#F9A825;color:#333;font-size:11px;padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle;">STAGING</span></h1>
+    <h1>Zedric's Production Hub</h1>
     <div class="subtitle">Drag to reorder | Tap to move between days</div>
     <div class="sync-status" id="syncStatus"><span class="sync-dot disconnected" id="syncDot"></span>Connecting...</div>
   </div>
@@ -232,7 +232,7 @@
     <button class="btn btn-outline" onclick="toggleMoveMode()" id="moveModeBtn">Move Dishes</button>
     <button class="btn btn-outline" onclick="openHistory()">History</button>
     <button class="btn btn-white" onclick="exportPDF()">Export PDF</button>
-    <button class="btn btn-outline" onclick="logout()" style="font-size:11px;padding:6px 10px;">Logout</button>
+    <button class="btn btn-outline" onclick="logout()" style="font-size:11px; padding:6px 10px; opacity:0.7;">Logout</button>
   </div>
 </div>
 
@@ -261,53 +261,53 @@
 
 <script>
 const PRODUCTION_DATA = {
-  "Tuesday 4/14": {
+  "Tuesday 4/21": {
     "Queue": { target: 800, dishes: [
-      { name: "Bacon & Gruyere Egg Bites w/ Cauliflower Hash (2)", addIn: "", guide: "", instruction: "", ordered: 55, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Bacon & Gruyere Egg Bites w/ Cauliflower Hash (2)", addIn: "", guide: "", instruction: "", ordered: 50, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Bacon Tomato & Mushroom Omelette", addIn: "", guide: "", instruction: "", ordered: 55, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Brisket Hash (3)", addIn: "", guide: "", instruction: "", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Brisket Hash (3)", addIn: "", guide: "", instruction: "", ordered: 70, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Beef Tenderloin Steak & Egg Scramble (3)", addIn: "", guide: "", instruction: "", ordered: 50, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Overnight Oats", addIn: "", guide: "", instruction: "", ordered: 70, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Blueberry Protein Pancakes w/ Eggs (3)", addIn: "", guide: "", instruction: "", ordered: 30, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Blueberry Overnight Oats", addIn: "", guide: "", instruction: "", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Country Sausage Breakfast Bowl (3)", addIn: "", guide: "", instruction: "", ordered: 160, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Turkey Chorizo over Rice (3)", addIn: "", guide: "", instruction: "", ordered: 70, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Southern Breakfast Bowl (3)", addIn: "", guide: "", instruction: "", ordered: 60, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Southern Breakfast Bowl (3)", addIn: "", guide: "", instruction: "", ordered: 50, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Tex Mex Turkey Picadillo (1)", addIn: "", guide: "", instruction: "", ordered: 150, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Turkey Sausage Egg & Sweet Potato Hash (3)", addIn: "", guide: "", instruction: "", ordered: 60, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Arroz Con Pollo (2)", addIn: "", guide: "", instruction: "", ordered: 95, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "BBQ Brisket Mac", addIn: "", guide: "", instruction: "", ordered: 180, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Arroz Con Pollo (2)", addIn: "", guide: "", instruction: "", ordered: 105, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "BBQ Brisket Mac", addIn: "", guide: "", instruction: "", ordered: 120, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Beef Taco Skillet (2)", addIn: "", guide: "", instruction: "", ordered: 120, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Blackened Chicken Alfredo Penne (3)", addIn: "", guide: "", instruction: "", ordered: 260, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Blackened Chicken Alfredo Penne (3)", addIn: "", guide: "", instruction: "", ordered: 280, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Blackened Chicken w/ Fingerlings (3)", addIn: "", guide: "", instruction: "", ordered: 230, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Blackened Mahi Over Cilantro Lime Rice (5)", addIn: "", guide: "", instruction: "", ordered: 195, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Chicken & Italian Sausage Over Pasta (2)", addIn: "", guide: "", instruction: "", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Chicken Enchilada Casserole (2)", addIn: "", guide: "", instruction: "", ordered: 250, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Blackened Mahi Over Cilantro Lime Rice (5)", addIn: "", guide: "", instruction: "", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Chicken & Italian Sausage Over Pasta (2)", addIn: "", guide: "", instruction: "", ordered: 210, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Chicken Enchilada Casserole (2)", addIn: "", guide: "", instruction: "", ordered: 270, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Chicken Madeira (4)", addIn: "", guide: "", instruction: "", ordered: 220, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Dirty Rice", addIn: "", guide: "", instruction: "", ordered: 55, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Glazed Beef Meatloaf (3)", addIn: "", guide: "", instruction: "", ordered: 230, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Fiesta Street Rice Bowl", addIn: "", guide: "", instruction: "", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Glazed Beef Meatloaf (3)", addIn: "", guide: "", instruction: "", ordered: 250, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Greek Chicken Bowl", addIn: "", guide: "", instruction: "", ordered: 130, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Green Chile Chicken Over Rice (2)", addIn: "", guide: "", instruction: "", ordered: 175, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Grilled Chicken Over Cheesy Bacon Broccoli (2)", addIn: "", guide: "", instruction: "", ordered: 150, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Green Chile Chicken Over Rice (2)", addIn: "", guide: "", instruction: "", ordered: 185, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Grilled Chicken Over Cheesy Bacon Broccoli (2)", addIn: "", guide: "", instruction: "", ordered: 170, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Grilled Salmon (3)", addIn: "", guide: "", instruction: "", ordered: 140, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Herb Chicken w/ Carrots & Broccolini (3)", addIn: "", guide: "", instruction: "", ordered: 150, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Korean Beef BBQ Tenderloin (2)", addIn: "", guide: "", instruction: "", ordered: 180, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Herb Chicken w/ Carrots & Broccolini (3)", addIn: "", guide: "", instruction: "", ordered: 165, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Korean Beef BBQ Tenderloin (2)", addIn: "", guide: "", instruction: "", ordered: 200, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Parmesan Crusted Chop Steak (2)", addIn: "", guide: "", instruction: "", ordered: 114, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Ranch Chicken w/ Mozzarella & Bacon (2)", addIn: "", guide: "", instruction: "", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Roasted Turkey w/ Cajun Butter (3)", addIn: "", guide: "", instruction: "", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Rustic Chicken Parmesan (2)", addIn: "", guide: "", instruction: "", ordered: 250, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Ranch Chicken w/ Mozzarella & Bacon (2)", addIn: "", guide: "", instruction: "", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Roasted Turkey w/ Cajun Butter (3)", addIn: "", guide: "", instruction: "", ordered: 110, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Rustic Chicken Parmesan (2)", addIn: "", guide: "", instruction: "", ordered: 270, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Salisbury Steak (4)", addIn: "", guide: "", instruction: "", ordered: 126, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Seared Beef Tenderloin (4)", addIn: "", guide: "", instruction: "", ordered: 120, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Texas Style Turkey Chili Bowl (1)", addIn: "", guide: "", instruction: "", ordered: 90, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Turkey Ragu over Spaghetti Squash (2)", addIn: "", guide: "", instruction: "", ordered: 160, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "GF Chicken ZedStrips Over Mac-N-Cheese (4)", addIn: "", guide: "", instruction: "", ordered: 160, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "Texas Style Turkey Chili Mac (1)", addIn: "", guide: "", instruction: "", ordered: 300, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "Peanut Butter & Chocolate Chews", addIn: "", guide: "", instruction: "", ordered: 150, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "1/2# Green Chile Chicken (1)", addIn: "", guide: "", instruction: "", ordered: 50, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "1/2# Grilled Chicken (1)", addIn: "", guide: "", instruction: "", ordered: 40, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Chocolate Pecan & Zucchini Muffin", addIn: "", guide: "", instruction: "", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Peanut Butter & Chocolate Chews", addIn: "", guide: "", instruction: "", ordered: 125, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# Green Chile Chicken (1)", addIn: "", guide: "", instruction: "", ordered: 60, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# Grilled Chicken (1)", addIn: "", guide: "", instruction: "", ordered: 45, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "1/2# Baked Chicken (1)", addIn: "", guide: "", instruction: "", ordered: 35, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "Chicken On A Stick", addIn: "", guide: "", instruction: "", ordered: 100, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "1/2# Herb Marinated Chicken (1)", addIn: "", guide: "", instruction: "", ordered: 20, finalCount: "", startTime: "", stopTime: "", notes: "" },
       { name: "1/2# Turkey Chorizo (1)", addIn: "", guide: "", instruction: "", ordered: 15, finalCount: "", startTime: "", stopTime: "", notes: "" },
-      { name: "1/2# Chicken ZedStrips w/ Dijonnaise (1)", addIn: "", guide: "", instruction: "", ordered: 30, finalCount: "", startTime: "", stopTime: "", notes: "" },
+      { name: "1/2# Chicken ZedStrips w/ Dijonnaise (1)", addIn: "", guide: "", instruction: "", ordered: 40, finalCount: "", startTime: "", stopTime: "", notes: "" },
     ]},
     "Station 1": { target: 800, dishes: [] },
     "Station 2": { target: 800, dishes: [] },
@@ -315,7 +315,7 @@ const PRODUCTION_DATA = {
     "Station 4": { target: 800, dishes: [] },
     "Station 5": { target: 800, dishes: [] },
   },
-  "Wednesday 4/15": {
+  "Wednesday 4/22": {
     "Queue":     { target: 800, dishes: [] },
     "Station 1": { target: 800, dishes: [] },
     "Station 2": { target: 800, dishes: [] },
@@ -323,7 +323,7 @@ const PRODUCTION_DATA = {
     "Station 4": { target: 800, dishes: [] },
     "Station 5": { target: 800, dishes: [] },
   },
-  "Thursday 4/16": {
+  "Thursday 4/23": {
     "Queue":     { target: 800, dishes: [] },
     "Station 1": { target: 800, dishes: [] },
     "Station 2": { target: 800, dishes: [] },
@@ -346,11 +346,10 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
-const dataRef = db.ref('staging_productionData');
-const dishLibraryRef = db.ref('staging_dishLibrary');
+const dataRef = db.ref('productionData');
+const dishLibraryRef = db.ref('dishLibrary');
 let isRemoteUpdate = false;
 let syncTimeout = null;
-let userRole = 'team'; // 'team' or 'admin'
 
 // Auth is now handled by PIN login below
 
@@ -398,11 +397,12 @@ function isBlankTemplateData(data) {
   return totalDishes > 0 && dishesWithData === 0 && dishesOutsideQueue === 0;
 }
 
-// FULL sync — only used for structural changes (move dishes, reorder, new week push)
 function syncToFirebase() {
   if (isRemoteUpdate) return;
+  // SAFEGUARD: Never push blank template data to Firebase — this prevents the local HTML
+  // file from accidentally overwriting the team's real production data
   if (isBlankTemplateData(PRODUCTION_DATA)) {
-    console.warn('BLOCKED: syncToFirebase() skipped — data looks like blank template');
+    console.warn('BLOCKED: syncToFirebase() skipped — data looks like blank template (no finals, times, or station assignments)');
     return;
   }
   if (syncTimeout) clearTimeout(syncTimeout);
@@ -411,8 +411,7 @@ function syncToFirebase() {
   }, 300);
 }
 
-// FIELD-LEVEL sync — used for individual dish field edits (times, counts, notes, etc.)
-// This prevents concurrent users from overwriting each other's changes
+// Field-level sync: only writes the specific field that changed (prevents concurrent edit conflicts)
 function syncFieldToFirebase(day, station, dishIndex, field, value) {
   if (isRemoteUpdate) return;
   const safeDay = day.replace(/\//g, '-');
@@ -420,7 +419,7 @@ function syncFieldToFirebase(day, station, dishIndex, field, value) {
   dataRef.child(path).set(value);
 }
 
-// Sync a single dish object (used when multiple fields change at once)
+// Dish-level sync: writes an entire dish object (used after structural changes to a single dish)
 function syncDishToFirebase(day, station, dishIndex) {
   if (isRemoteUpdate) return;
   const safeDay = day.replace(/\//g, '-');
@@ -631,6 +630,7 @@ let currentDay = sortedDays()[0];
 let moveMode = false;
 let selectedDishes = []; // Array of { day, station, index }
 let compactView = false;
+let userRole = 'team'; // 'team' or 'admin'
 
 // Drag state
 let dragItem = null;
@@ -743,8 +743,8 @@ function render() {
     const totalFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
     const livePPH = getStationPPH(stationData);
     const isQueue = stationName === 'Queue';
-
     const operatorName = stationData.operator || '';
+
     stationDiv.innerHTML = `
       <div class="station-header">
         <span>${stationName}${isQueue ? ' — assign dishes to stations using Move Dishes' : ''}</span>
@@ -855,11 +855,11 @@ function createDishRow(dish, idx, stationName) {
     `;
   } else {
     // Normal mode: full editing capabilities
-    const nameEditable = userRole === 'admin';
     row.innerHTML = `
       <div class="drag-handle">\u2630</div>
       <div class="dish-info">
-        <div class="dish-name ${nameEditable ? 'editable' : ''}" ${nameEditable ? 'contenteditable="true" spellcheck="false" tabindex="-1" onclick="event.stopPropagation()" onblur="updateDishField(\'' + currentDay + '\',\'' + stationName + '\',' + idx + ',\'name\',this.textContent)"' : ''}>${dish.name}</div>
+        <div class="dish-name editable" contenteditable="true" spellcheck="false" tabindex="-1"
+          onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'name',this.textContent)">${dish.name}</div>
         <div class="dish-details editable" contenteditable="true" spellcheck="false" tabindex="-1"
           onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'guide',this.textContent)">${dish.guide}</div>
       </div>
@@ -910,21 +910,18 @@ function createDishRow(dish, idx, stationName) {
       if (e.target.tagName === 'INPUT' || e.target.classList.contains('expand-btn')) return;
       selectForMove(currentDay, stationName, idx);
     };
-  } else if (userRole === 'admin') {
-    // Only admins can drag to reorder
-    row.draggable = true;
-    row.addEventListener('dragstart', handleDragStart);
-    row.addEventListener('dragover', handleDragOver);
-    row.addEventListener('dragend', handleDragEnd);
-    row.addEventListener('drop', handleDrop);
-    const handle = row.querySelector('.drag-handle');
-    handle.addEventListener('touchstart', handleTouchStart, { passive: false });
-    handle.addEventListener('touchmove', handleTouchMove, { passive: false });
-    handle.addEventListener('touchend', handleTouchEnd);
   } else {
-    // Team users: hide drag handle visual cue
-    const handle = row.querySelector('.drag-handle');
-    if (handle) handle.style.visibility = 'hidden';
+    if (userRole === 'admin') {
+      row.draggable = true;
+      row.addEventListener('dragstart', handleDragStart);
+      row.addEventListener('dragover', handleDragOver);
+      row.addEventListener('dragend', handleDragEnd);
+      row.addEventListener('drop', handleDrop);
+      const handle = row.querySelector('.drag-handle');
+      handle.addEventListener('touchstart', handleTouchStart, { passive: false });
+      handle.addEventListener('touchmove', handleTouchMove, { passive: false });
+      handle.addEventListener('touchend', handleTouchEnd);
+    }
   }
 
   return row;
@@ -946,7 +943,6 @@ function updateFinal(day, station, idx, value) {
 function updateDishField(day, station, idx, field, value) {
   value = value.trim();
   if (field === 'instruction' && value === '(click to add)') return;
-  // Admin-only fields: name requires admin role
   if (field === 'name' && userRole !== 'admin') {
     showSaveNotice('Admin PIN required to edit dish names');
     render();
@@ -955,6 +951,7 @@ function updateDishField(day, station, idx, field, value) {
   PRODUCTION_DATA[day][station].dishes[idx][field] = value;
   syncFieldToFirebase(day, station, idx, field, value);
   // If guide, instruction, or addIn is edited, save to the permanent Dish Library
+  // so it carries forward to next week automatically
   if (field === 'guide' || field === 'instruction' || field === 'addIn') {
     const dishName = PRODUCTION_DATA[day][station].dishes[idx].name;
     const libKey = dishName.replace(/[.#$/\[\]]/g, '_');
@@ -973,7 +970,6 @@ function updateOperator(day, station, value) {
   value = value.trim();
   if (!PRODUCTION_DATA[day] || !PRODUCTION_DATA[day][station]) return;
   PRODUCTION_DATA[day][station].operator = value;
-  // Field-level sync for operator (station level, not dish level)
   const safeDay = day.replace(/\//g, '-');
   dataRef.child(safeDay + '/' + station + '/operator').set(value);
   showSaveNotice(value ? value + ' assigned' : 'Operator cleared');
@@ -1005,10 +1001,8 @@ function toggleMoveMode() {
 function selectForMove(day, station, idx) {
   const existingIdx = selectedDishes.findIndex(s => s.day === day && s.station === station && s.index === idx);
   if (existingIdx >= 0) {
-    // Deselect
     selectedDishes.splice(existingIdx, 1);
   } else {
-    // Add to selection
     selectedDishes.push({ day, station, index: idx });
   }
   render();
@@ -1023,26 +1017,14 @@ function updateMoveBanner() {
   banner.classList.add('show');
 
   if (selectedDishes.length === 0) {
-    text.textContent = 'Tap dishes to select them for moving (select multiple)';
+    text.textContent = 'Tap dishes to select them for moving (multi-select)';
     actions.innerHTML = '';
     return;
   }
 
-  // Build display text showing selected dish names
-  const names = [];
-  selectedDishes.forEach(sel => {
-    try {
-      const dish = PRODUCTION_DATA[sel.day][sel.station].dishes[sel.index];
-      if (dish) names.push(dish.name);
-    } catch(e) {}
-  });
-
-  text.textContent = `Moving ${selectedDishes.length} dish${selectedDishes.length > 1 ? 'es' : ''}: ${names.join(', ')}`;
+  text.textContent = `${selectedDishes.length} dish${selectedDishes.length > 1 ? 'es' : ''} selected`;
 
   actions.innerHTML = '';
-
-  // Collect unique source stations to exclude from destinations
-  const sourceKeys = new Set(selectedDishes.map(s => s.day + '|' + s.station));
 
   // Show same-day stations first, then other days
   const sameDayStations = [];
@@ -1050,8 +1032,6 @@ function updateMoveBanner() {
 
   sortedDays().forEach(day => {
     STATION_ORDER.forEach(station => {
-      // Skip if ALL selected dishes are from this exact day+station
-      if (sourceKeys.size === 1 && sourceKeys.has(day + '|' + station)) return;
       if (day === currentDay) {
         sameDayStations.push({ day, station, label: station });
       } else {
@@ -1070,22 +1050,19 @@ function updateMoveBanner() {
 
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'move-btn move-btn-cancel';
-  cancelBtn.textContent = 'Deselect All';
+  cancelBtn.textContent = 'Cancel';
   cancelBtn.onclick = () => { selectedDishes = []; render(); };
   actions.appendChild(cancelBtn);
 }
 
 function moveDishesTo(targetDay, targetStation) {
   if (selectedDishes.length === 0) return;
-
-  // Auto-create the target station if it doesn't exist yet
   if (!PRODUCTION_DATA[targetDay]) return;
   if (!PRODUCTION_DATA[targetDay][targetStation]) {
     PRODUCTION_DATA[targetDay][targetStation] = { target: 800, dishes: [] };
   }
 
-  // Sort selections by index descending so splicing doesn't shift earlier indices
-  // Group by day+station for efficient removal
+  // Group selections by source day+station, then sort by descending index to avoid shifting
   const grouped = {};
   selectedDishes.forEach(sel => {
     const key = sel.day + '|' + sel.station;
@@ -1095,7 +1072,6 @@ function moveDishesTo(targetDay, targetStation) {
 
   const movedDishes = [];
   Object.values(grouped).forEach(group => {
-    // Sort by index descending
     group.sort((a, b) => b.index - a.index);
     group.forEach(sel => {
       try {
@@ -1108,14 +1084,10 @@ function moveDishesTo(targetDay, targetStation) {
     });
   });
 
-  // Add all moved dishes to target
   PRODUCTION_DATA[targetDay][targetStation].dishes.push(...movedDishes);
-
   const count = movedDishes.length;
   selectedDishes = [];
-
-  // STAY on the current day — don't navigate away
-  syncToFirebase();
+  syncToFirebase(); // Full sync for structural changes
   renderTabs();
   render();
   showSaveNotice(count + ' dish' + (count > 1 ? 'es' : '') + ' moved to ' + targetStation + (targetDay !== currentDay ? ' (' + targetDay + ')' : ''));
@@ -1313,7 +1285,7 @@ function showSaveNotice(msg) {
 }
 
 // --- Weekly History ---
-const historyRef = db.ref('staging_history');
+const historyRef = db.ref('history');
 
 // Auto-save current week to history (called when new week data is loaded)
 function saveWeekToHistory() {
@@ -1543,7 +1515,7 @@ function viewHistoryWeek(weekKey) {
 // ==================== PIN LOGIN ====================
 const TEAM_PIN = '7590';
 const ADMIN_PIN = '6895';
-const LOGIN_KEY = 'zedrics_hub_staging_login';
+const LOGIN_KEY = 'zedrics_hub_login';
 const LOGIN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
 function isLoginValid() {
@@ -1580,20 +1552,7 @@ function logout() {
 function showApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('main-content').style.display = 'block';
-    // Update subtitle based on role
-    updateRoleUI();
     init();
-}
-
-function updateRoleUI() {
-    const subtitle = document.querySelector('.subtitle');
-    if (userRole === 'admin') {
-        subtitle.textContent = 'Admin Mode — Drag to reorder | Move dishes | Edit dish names';
-        document.getElementById('moveModeBtn').style.display = '';
-    } else {
-        subtitle.textContent = 'Team Mode — Enter times, counts & notes';
-        document.getElementById('moveModeBtn').style.display = '';
-    }
 }
 
 function handleLogin(pin) {
