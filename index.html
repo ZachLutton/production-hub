@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Zedric's Production Hub</title>
+<title>Zedric's Production Hub (Staging)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -47,6 +47,9 @@
   .empty-day-msg { text-align: center; padding: 40px 20px; color: #999; font-size: 14px; }
   .station-header .pph-info { font-size: 12px; opacity: 0.9; font-weight: 500; text-align: right; }
   .station-header .pph-live { font-size: 15px; font-weight: 700; }
+  .station-header .operator-input { background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; color: white; font-size: 12px; font-weight: 600; padding: 4px 8px; width: 120px; text-align: center; font-family: inherit; outline: none; }
+  .station-header .operator-input::placeholder { color: rgba(255,255,255,0.6); }
+  .station-header .operator-input:focus { background: rgba(255,255,255,0.3); border-color: white; }
 
   .dish-list { background: white; border-radius: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow: hidden; }
 
@@ -211,7 +214,7 @@
 <div id="login-screen">
     <div class="login-box">
         <h1>Zedric's Production Hub</h1>
-        <p>Enter team PIN to continue</p>
+        <p>Enter team or admin PIN to continue</p>
         <input type="password" id="pin-input" class="pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autofocus>
         <div class="pin-error" id="pin-error"></div>
     </div>
@@ -221,7 +224,7 @@
 <div id="main-content">
 <div class="header">
   <div class="header-left">
-    <h1>Zedric's Production Hub</h1>
+    <h1>Zedric's Production Hub <span style="background:#F9A825;color:#333;font-size:11px;padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle;">STAGING</span></h1>
     <div class="subtitle">Drag to reorder | Tap to move between days</div>
     <div class="sync-status" id="syncStatus"><span class="sync-dot disconnected" id="syncDot"></span>Connecting...</div>
   </div>
@@ -229,6 +232,7 @@
     <button class="btn btn-outline" onclick="toggleMoveMode()" id="moveModeBtn">Move Dishes</button>
     <button class="btn btn-outline" onclick="openHistory()">History</button>
     <button class="btn btn-white" onclick="exportPDF()">Export PDF</button>
+    <button class="btn btn-outline" onclick="logout()" style="font-size:11px;padding:6px 10px;">Logout</button>
   </div>
 </div>
 
@@ -342,10 +346,11 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
-const dataRef = db.ref('productionData');
-const dishLibraryRef = db.ref('dishLibrary');
+const dataRef = db.ref('staging_productionData');
+const dishLibraryRef = db.ref('staging_dishLibrary');
 let isRemoteUpdate = false;
 let syncTimeout = null;
+let userRole = 'team'; // 'team' or 'admin'
 
 // Auth is now handled by PIN login below
 
@@ -393,18 +398,35 @@ function isBlankTemplateData(data) {
   return totalDishes > 0 && dishesWithData === 0 && dishesOutsideQueue === 0;
 }
 
+// FULL sync — only used for structural changes (move dishes, reorder, new week push)
 function syncToFirebase() {
   if (isRemoteUpdate) return;
-  // SAFEGUARD: Never push blank template data to Firebase — this prevents the local HTML
-  // file from accidentally overwriting the team's real production data
   if (isBlankTemplateData(PRODUCTION_DATA)) {
-    console.warn('BLOCKED: syncToFirebase() skipped — data looks like blank template (no finals, times, or station assignments)');
+    console.warn('BLOCKED: syncToFirebase() skipped — data looks like blank template');
     return;
   }
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(() => {
     dataRef.set(sanitizeKeys(PRODUCTION_DATA));
   }, 300);
+}
+
+// FIELD-LEVEL sync — used for individual dish field edits (times, counts, notes, etc.)
+// This prevents concurrent users from overwriting each other's changes
+function syncFieldToFirebase(day, station, dishIndex, field, value) {
+  if (isRemoteUpdate) return;
+  const safeDay = day.replace(/\//g, '-');
+  const path = `${safeDay}/${station}/dishes/${dishIndex}/${field}`;
+  dataRef.child(path).set(value);
+}
+
+// Sync a single dish object (used when multiple fields change at once)
+function syncDishToFirebase(day, station, dishIndex) {
+  if (isRemoteUpdate) return;
+  const safeDay = day.replace(/\//g, '-');
+  const dish = PRODUCTION_DATA[day][station].dishes[dishIndex];
+  if (!dish) return;
+  dataRef.child(`${safeDay}/${station}/dishes/${dishIndex}`).set(dish);
 }
 
 // Seed the Dish Library from the current PRODUCTION_DATA
@@ -607,7 +629,7 @@ function sortedDays() {
 
 let currentDay = sortedDays()[0];
 let moveMode = false;
-let selectedDish = null; // { day, station, index }
+let selectedDishes = []; // Array of { day, station, index }
 let compactView = false;
 
 // Drag state
@@ -722,9 +744,11 @@ function render() {
     const livePPH = getStationPPH(stationData);
     const isQueue = stationName === 'Queue';
 
+    const operatorName = stationData.operator || '';
     stationDiv.innerHTML = `
       <div class="station-header">
         <span>${stationName}${isQueue ? ' — assign dishes to stations using Move Dishes' : ''}</span>
+        ${!isQueue ? `<input class="operator-input" type="text" placeholder="Operator" value="${operatorName}" onblur="updateOperator('${currentDay}','${stationName}',this.value)" onclick="event.stopPropagation()">` : ''}
         <div class="pph-info">
           ${isQueue
             ? `<div>${totalOrdered} ordered | ${stationData.dishes.length} dish${stationData.dishes.length !== 1 ? 'es' : ''} to assign</div>`
@@ -777,12 +801,12 @@ function render() {
     el.appendChild(msg);
   }
 
-  try { updateMoveBanner(); } catch(e) { selectedDish = null; console.error('Move banner error:', e); }
+  try { updateMoveBanner(); } catch(e) { selectedDishes = []; console.error('Move banner error:', e); }
 }
 
 function createDishRow(dish, idx, stationName) {
   const row = document.createElement('div');
-  const isSelected = selectedDish && selectedDish.day === currentDay && selectedDish.station === stationName && selectedDish.index === idx;
+  const isSelected = selectedDishes.some(s => s.day === currentDay && s.station === stationName && s.index === idx);
   row.className = 'dish-row' + (moveMode ? ' move-mode' : '') + (isSelected ? ' selected-for-move' : '');
   row.dataset.index = idx;
   row.dataset.station = stationName;
@@ -831,11 +855,11 @@ function createDishRow(dish, idx, stationName) {
     `;
   } else {
     // Normal mode: full editing capabilities
+    const nameEditable = userRole === 'admin';
     row.innerHTML = `
       <div class="drag-handle">\u2630</div>
       <div class="dish-info">
-        <div class="dish-name editable" contenteditable="true" spellcheck="false" tabindex="-1"
-          onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'name',this.textContent)">${dish.name}</div>
+        <div class="dish-name ${nameEditable ? 'editable' : ''}" ${nameEditable ? 'contenteditable="true" spellcheck="false" tabindex="-1" onclick="event.stopPropagation()" onblur="updateDishField(\'' + currentDay + '\',\'' + stationName + '\',' + idx + ',\'name\',this.textContent)"' : ''}>${dish.name}</div>
         <div class="dish-details editable" contenteditable="true" spellcheck="false" tabindex="-1"
           onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'guide',this.textContent)">${dish.guide}</div>
       </div>
@@ -886,7 +910,8 @@ function createDishRow(dish, idx, stationName) {
       if (e.target.tagName === 'INPUT' || e.target.classList.contains('expand-btn')) return;
       selectForMove(currentDay, stationName, idx);
     };
-  } else {
+  } else if (userRole === 'admin') {
+    // Only admins can drag to reorder
     row.draggable = true;
     row.addEventListener('dragstart', handleDragStart);
     row.addEventListener('dragover', handleDragOver);
@@ -896,30 +921,40 @@ function createDishRow(dish, idx, stationName) {
     handle.addEventListener('touchstart', handleTouchStart, { passive: false });
     handle.addEventListener('touchmove', handleTouchMove, { passive: false });
     handle.addEventListener('touchend', handleTouchEnd);
+  } else {
+    // Team users: hide drag handle visual cue
+    const handle = row.querySelector('.drag-handle');
+    if (handle) handle.style.visibility = 'hidden';
   }
 
   return row;
 }
 
 function updateTime(day, station, idx, field, value) {
-  PRODUCTION_DATA[day][station].dishes[idx][field] = formatTimeInput(value);
-  syncToFirebase();
+  const formatted = formatTimeInput(value);
+  PRODUCTION_DATA[day][station].dishes[idx][field] = formatted;
+  syncFieldToFirebase(day, station, idx, field, formatted);
   render();
 }
 
 function updateFinal(day, station, idx, value) {
   PRODUCTION_DATA[day][station].dishes[idx].finalCount = value;
-  syncToFirebase();
+  syncFieldToFirebase(day, station, idx, 'finalCount', value);
   render();
 }
 
 function updateDishField(day, station, idx, field, value) {
   value = value.trim();
   if (field === 'instruction' && value === '(click to add)') return;
+  // Admin-only fields: name requires admin role
+  if (field === 'name' && userRole !== 'admin') {
+    showSaveNotice('Admin PIN required to edit dish names');
+    render();
+    return;
+  }
   PRODUCTION_DATA[day][station].dishes[idx][field] = value;
-  syncToFirebase();
+  syncFieldToFirebase(day, station, idx, field, value);
   // If guide, instruction, or addIn is edited, save to the permanent Dish Library
-  // so it carries forward to next week automatically
   if (field === 'guide' || field === 'instruction' || field === 'addIn') {
     const dishName = PRODUCTION_DATA[day][station].dishes[idx].name;
     const libKey = dishName.replace(/[.#$/\[\]]/g, '_');
@@ -930,8 +965,18 @@ function updateDishField(day, station, idx, field, value) {
 
 function updateNotes(day, station, idx, value) {
   PRODUCTION_DATA[day][station].dishes[idx].notes = value;
-  syncToFirebase();
+  syncFieldToFirebase(day, station, idx, 'notes', value);
   showSaveNotice('Updated');
+}
+
+function updateOperator(day, station, value) {
+  value = value.trim();
+  if (!PRODUCTION_DATA[day] || !PRODUCTION_DATA[day][station]) return;
+  PRODUCTION_DATA[day][station].operator = value;
+  // Field-level sync for operator (station level, not dish level)
+  const safeDay = day.replace(/\//g, '-');
+  dataRef.child(safeDay + '/' + station + '/operator').set(value);
+  showSaveNotice(value ? value + ' assigned' : 'Operator cleared');
 }
 
 function toggleDetail(stationId, idx, event) {
@@ -944,8 +989,12 @@ function toggleDetail(stationId, idx, event) {
 
 // --- Move between days ---
 function toggleMoveMode() {
+  if (!moveMode && userRole !== 'admin') {
+    showSaveNotice('Admin PIN required to move dishes');
+    return;
+  }
   moveMode = !moveMode;
-  selectedDish = null;
+  selectedDishes = [];
   document.getElementById('moveModeBtn').textContent = moveMode ? 'Cancel Move' : 'Move Dishes';
   document.getElementById('moveModeBtn').style.background = moveMode ? '#F9A825' : '';
   document.getElementById('moveModeBtn').style.color = moveMode ? '#333' : '';
@@ -954,10 +1003,13 @@ function toggleMoveMode() {
 }
 
 function selectForMove(day, station, idx) {
-  if (selectedDish && selectedDish.day === day && selectedDish.station === station && selectedDish.index === idx) {
-    selectedDish = null;
+  const existingIdx = selectedDishes.findIndex(s => s.day === day && s.station === station && s.index === idx);
+  if (existingIdx >= 0) {
+    // Deselect
+    selectedDishes.splice(existingIdx, 1);
   } else {
-    selectedDish = { day, station, index: idx };
+    // Add to selection
+    selectedDishes.push({ day, station, index: idx });
   }
   render();
 }
@@ -970,40 +1022,37 @@ function updateMoveBanner() {
   if (!moveMode) { banner.classList.remove('show'); return; }
   banner.classList.add('show');
 
-  if (!selectedDish) {
-    text.textContent = 'Tap a dish to select it for moving';
+  if (selectedDishes.length === 0) {
+    text.textContent = 'Tap dishes to select them for moving (select multiple)';
     actions.innerHTML = '';
     return;
   }
 
-  // Safety check: verify the selected dish still exists in the data
-  try {
-    const dayData = PRODUCTION_DATA[selectedDish.day];
-    if (!dayData) { selectedDish = null; text.textContent = 'Tap a dish to select it for moving'; actions.innerHTML = ''; return; }
-    const stationData = dayData[selectedDish.station];
-    if (!stationData || !stationData.dishes) { selectedDish = null; text.textContent = 'Tap a dish to select it for moving'; actions.innerHTML = ''; return; }
-    const dish = stationData.dishes[selectedDish.index];
-    if (!dish) { selectedDish = null; text.textContent = 'Tap a dish to select it for moving'; actions.innerHTML = ''; return; }
+  // Build display text showing selected dish names
+  const names = [];
+  selectedDishes.forEach(sel => {
+    try {
+      const dish = PRODUCTION_DATA[sel.day][sel.station].dishes[sel.index];
+      if (dish) names.push(dish.name);
+    } catch(e) {}
+  });
 
-    text.textContent = `Moving: ${dish.name}`;
-  } catch(e) {
-    selectedDish = null;
-    text.textContent = 'Tap a dish to select it for moving';
-    actions.innerHTML = '';
-    return;
-  }
+  text.textContent = `Moving ${selectedDishes.length} dish${selectedDishes.length > 1 ? 'es' : ''}: ${names.join(', ')}`;
 
   actions.innerHTML = '';
+
+  // Collect unique source stations to exclude from destinations
+  const sourceKeys = new Set(selectedDishes.map(s => s.day + '|' + s.station));
 
   // Show same-day stations first, then other days
   const sameDayStations = [];
   const otherDayStations = [];
 
   sortedDays().forEach(day => {
-    // Always offer all stations (Queue + 1-5) even if currently empty
     STATION_ORDER.forEach(station => {
-      if (day === selectedDish.day && station === selectedDish.station) return;
-      if (day === selectedDish.day) {
+      // Skip if ALL selected dishes are from this exact day+station
+      if (sourceKeys.size === 1 && sourceKeys.has(day + '|' + station)) return;
+      if (day === currentDay) {
         sameDayStations.push({ day, station, label: station });
       } else {
         otherDayStations.push({ day, station, label: day + ' ' + station });
@@ -1011,55 +1060,65 @@ function updateMoveBanner() {
     });
   });
 
-  // Render same-day stations first so they're easy to tap
   sameDayStations.concat(otherDayStations).forEach(dest => {
     const btn = document.createElement('button');
     btn.className = 'move-btn move-btn-dest';
     btn.textContent = `\u2192 ${dest.label}`;
-    btn.onclick = () => moveDishTo(dest.day, dest.station);
+    btn.onclick = () => moveDishesTo(dest.day, dest.station);
     actions.appendChild(btn);
   });
 
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'move-btn move-btn-cancel';
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.onclick = () => { selectedDish = null; render(); };
+  cancelBtn.textContent = 'Deselect All';
+  cancelBtn.onclick = () => { selectedDishes = []; render(); };
   actions.appendChild(cancelBtn);
 }
 
-function moveDishTo(targetDay, targetStation) {
-  if (!selectedDish) return;
+function moveDishesTo(targetDay, targetStation) {
+  if (selectedDishes.length === 0) return;
 
-  // Safety checks
-  try {
-    const sourceDishes = PRODUCTION_DATA[selectedDish.day][selectedDish.station].dishes;
-    // Auto-create the target station if it doesn't exist yet
-    if (!PRODUCTION_DATA[targetDay][targetStation]) {
-      PRODUCTION_DATA[targetDay][targetStation] = { target: 800, dishes: [] };
-    }
-    const targetDishes = PRODUCTION_DATA[targetDay][targetStation].dishes;
-    if (!sourceDishes || selectedDish.index >= sourceDishes.length) { selectedDish = null; render(); return; }
-    if (!targetDishes) { selectedDish = null; render(); return; }
-
-    const dish = sourceDishes.splice(selectedDish.index, 1)[0];
-    if (!dish) { selectedDish = null; render(); return; }
-    targetDishes.push(dish);
-  } catch(e) {
-    selectedDish = null;
-    render();
-    return;
+  // Auto-create the target station if it doesn't exist yet
+  if (!PRODUCTION_DATA[targetDay]) return;
+  if (!PRODUCTION_DATA[targetDay][targetStation]) {
+    PRODUCTION_DATA[targetDay][targetStation] = { target: 800, dishes: [] };
   }
 
-  const stayOnDay = currentDay;
-  selectedDish = null;
-  // Only switch tabs if moving to a different day
-  if (targetDay !== stayOnDay) {
-    currentDay = targetDay;
-  }
+  // Sort selections by index descending so splicing doesn't shift earlier indices
+  // Group by day+station for efficient removal
+  const grouped = {};
+  selectedDishes.forEach(sel => {
+    const key = sel.day + '|' + sel.station;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(sel);
+  });
+
+  const movedDishes = [];
+  Object.values(grouped).forEach(group => {
+    // Sort by index descending
+    group.sort((a, b) => b.index - a.index);
+    group.forEach(sel => {
+      try {
+        const sourceDishes = PRODUCTION_DATA[sel.day][sel.station].dishes;
+        if (sel.index < sourceDishes.length) {
+          const dish = sourceDishes.splice(sel.index, 1)[0];
+          if (dish) movedDishes.push(dish);
+        }
+      } catch(e) { console.error('Move error:', e); }
+    });
+  });
+
+  // Add all moved dishes to target
+  PRODUCTION_DATA[targetDay][targetStation].dishes.push(...movedDishes);
+
+  const count = movedDishes.length;
+  selectedDishes = [];
+
+  // STAY on the current day — don't navigate away
   syncToFirebase();
   renderTabs();
   render();
-  showSaveNotice('Dish moved to ' + targetStation);
+  showSaveNotice(count + ' dish' + (count > 1 ? 'es' : '') + ' moved to ' + targetStation + (targetDay !== currentDay ? ' (' + targetDay + ')' : ''));
 }
 
 // --- Drag and drop (same station reorder) ---
@@ -1157,10 +1216,11 @@ function exportPDF() {
       const totalFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
       const livePPH = getStationPPH(stationData);
 
+      const operatorLabel = stationData.operator ? `  —  ${stationData.operator}` : '';
       doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0);
-      doc.text(`${dayName} - ${stationName}`, 14, 15);
+      doc.text(`${dayName} - ${stationName}${operatorLabel}`, 14, 15);
 
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
@@ -1253,7 +1313,7 @@ function showSaveNotice(msg) {
 }
 
 // --- Weekly History ---
-const historyRef = db.ref('history');
+const historyRef = db.ref('staging_history');
 
 // Auto-save current week to history (called when new week data is loaded)
 function saveWeekToHistory() {
@@ -1433,8 +1493,9 @@ function viewHistoryWeek(weekKey) {
         const stationOrdered = stationData.dishes.reduce((s, d) => s + (d.ordered || 0), 0);
         const stationFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
 
+        const histOperator = stationData.operator ? ` (${stationData.operator})` : '';
         html += `<div class="history-station">`;
-        html += `<div class="history-station-name" style="background:${bg}">${stationName} — ${stationOrdered} ordered${stationFinal ? `, ${stationFinal} plated` : ''}</div>`;
+        html += `<div class="history-station-name" style="background:${bg}">${stationName}${histOperator} — ${stationOrdered} ordered${stationFinal ? `, ${stationFinal} plated` : ''}</div>`;
         html += `<table class="history-table"><thead><tr>
           <th>Dish</th><th>Ordered</th><th>Final</th><th>+/-</th><th>PPH</th><th class="notes-col">Notes</th>
         </tr></thead><tbody>`;
@@ -1481,7 +1542,8 @@ function viewHistoryWeek(weekKey) {
 
 // ==================== PIN LOGIN ====================
 const TEAM_PIN = '7590';
-const LOGIN_KEY = 'zedrics_hub_login';
+const ADMIN_PIN = '6895';
+const LOGIN_KEY = 'zedrics_hub_staging_login';
 const LOGIN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
 function isLoginValid() {
@@ -1489,23 +1551,54 @@ function isLoginValid() {
         const stored = localStorage.getItem(LOGIN_KEY);
         if (!stored) return false;
         const data = JSON.parse(stored);
-        return data.pin === TEAM_PIN && (Date.now() - data.time) < LOGIN_DURATION;
+        const validPin = (data.pin === TEAM_PIN || data.pin === ADMIN_PIN);
+        if (validPin && (Date.now() - data.time) < LOGIN_DURATION) {
+            userRole = data.pin === ADMIN_PIN ? 'admin' : 'team';
+            return true;
+        }
+        return false;
     } catch(e) { return false; }
 }
 
-function saveLogin() {
-    localStorage.setItem(LOGIN_KEY, JSON.stringify({ pin: TEAM_PIN, time: Date.now() }));
+function saveLogin(pin) {
+    localStorage.setItem(LOGIN_KEY, JSON.stringify({ pin: pin, time: Date.now() }));
+    userRole = pin === ADMIN_PIN ? 'admin' : 'team';
+}
+
+function logout() {
+    localStorage.removeItem(LOGIN_KEY);
+    userRole = 'team';
+    moveMode = false;
+    selectedDishes = [];
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('main-content').style.display = 'none';
+    document.getElementById('pin-input').value = '';
+    document.getElementById('pin-error').textContent = '';
+    document.getElementById('pin-input').focus();
 }
 
 function showApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('main-content').style.display = 'block';
+    // Update subtitle based on role
+    updateRoleUI();
     init();
 }
 
-function handleLogin() {
+function updateRoleUI() {
+    const subtitle = document.querySelector('.subtitle');
+    if (userRole === 'admin') {
+        subtitle.textContent = 'Admin Mode — Drag to reorder | Move dishes | Edit dish names';
+        document.getElementById('moveModeBtn').style.display = '';
+    } else {
+        subtitle.textContent = 'Team Mode — Enter times, counts & notes';
+        document.getElementById('moveModeBtn').style.display = '';
+    }
+}
+
+function handleLogin(pin) {
     auth.signInAnonymously().then(() => {
-        saveLogin();
+        saveLogin(pin);
         showApp();
     }).catch(err => {
         document.getElementById('pin-error').textContent = 'Login error: ' + err.message;
@@ -1515,8 +1608,8 @@ function handleLogin() {
 document.getElementById('pin-input').addEventListener('input', function() {
     document.getElementById('pin-error').textContent = '';
     if (this.value.length === 4) {
-        if (this.value === TEAM_PIN) {
-            handleLogin();
+        if (this.value === TEAM_PIN || this.value === ADMIN_PIN) {
+            handleLogin(this.value);
         } else {
             document.getElementById('pin-error').textContent = 'Incorrect PIN';
             this.value = '';
