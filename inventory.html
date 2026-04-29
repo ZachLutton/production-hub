@@ -755,16 +755,17 @@
 
         let meals = [...MEALS_DATA];
 
-        function initializeInventory() {
+        function initializeInventory(itemsData, mealsData) {
             const container = document.getElementById('inventory-container');
             container.innerHTML = '';
 
-            Object.keys(INVENTORY_DATA).forEach(sectionName => {
-                const section = createSection(sectionName, INVENTORY_DATA[sectionName]);
+            const data = itemsData || INVENTORY_DATA;
+            Object.keys(data).forEach(sectionName => {
+                const section = createSection(sectionName, data[sectionName]);
                 container.appendChild(section);
             });
 
-            createMealsSection();
+            createMealsSection(mealsData);
         }
 
         function createItemRow(item, sectionId) {
@@ -888,7 +889,8 @@
             updateTotals();
         }
 
-        function createMealsSection() {
+        function createMealsSection(mealsData) {
+            const data = mealsData || MEALS_DATA;
             const container = document.getElementById('inventory-container');
 
             const section = document.createElement('div');
@@ -903,7 +905,7 @@
             headerInfo.className = 'section-header-info';
             headerInfo.innerHTML = `
                 <div class="section-header-title">Front of House Meals</div>
-                <div class="section-header-meta" id="meta-meals">${meals.length} meals | Total: $0.00</div>
+                <div class="section-header-meta" id="meta-meals">${data.length} meals | Total: $0.00</div>
             `;
 
             const toggle = document.createElement('div');
@@ -939,7 +941,7 @@
 
             const tbody = document.createElement('tbody');
             tbody.id = 'meals-tbody';
-            meals.forEach(meal => {
+            data.forEach(meal => {
                 tbody.appendChild(createMealRow(meal));
             });
 
@@ -1201,6 +1203,123 @@
             updateTotals();
         }
 
+        // ==================== PER-LOCATION ITEM LIST ====================
+        // Each location stores its own list of items + meals at:
+        //   inventory/{location}/items
+        //   inventory/{location}/meals
+        // This way deletes at one location don't affect the other, and deletes
+        // persist across months. Prices auto-sync from INVENTORY_DATA whenever
+        // the HTML is updated with a new BEK guide.
+
+        function locationItemsRef(loc) { return db.ref('inventory/' + loc + '/items'); }
+        function locationMealsRef(loc) { return db.ref('inventory/' + loc + '/meals'); }
+
+        // Apply latest INVENTORY_DATA prices to a saved items list (matching by item number)
+        function syncPricesFromConstant(savedData) {
+            const flatLatest = {};
+            Object.keys(INVENTORY_DATA).forEach(sec => {
+                INVENTORY_DATA[sec].forEach(it => {
+                    if (it.itemNumber) flatLatest[it.itemNumber] = it.price;
+                });
+            });
+            let changed = false;
+            Object.keys(savedData).forEach(sec => {
+                if (!Array.isArray(savedData[sec])) return;
+                savedData[sec].forEach(it => {
+                    if (it.itemNumber && flatLatest[it.itemNumber] !== undefined && it.price !== flatLatest[it.itemNumber]) {
+                        it.price = flatLatest[it.itemNumber];
+                        changed = true;
+                    }
+                });
+            });
+            return changed;
+        }
+
+        async function loadItemsForLocation(loc) {
+            const snap = await locationItemsRef(loc).once('value');
+            let data = snap.val();
+            if (!data) {
+                // First time at this location — seed with the full BEK list
+                await locationItemsRef(loc).set(INVENTORY_DATA);
+                return JSON.parse(JSON.stringify(INVENTORY_DATA));
+            }
+            // Sync any updated prices from the latest INVENTORY_DATA
+            if (syncPricesFromConstant(data)) {
+                await locationItemsRef(loc).set(data);
+                console.log('[Inventory] Synced updated prices to', loc);
+            }
+            return data;
+        }
+
+        async function loadMealsForLocation(loc) {
+            const snap = await locationMealsRef(loc).once('value');
+            let data = snap.val();
+            if (!data) {
+                await locationMealsRef(loc).set(MEALS_DATA);
+                return JSON.parse(JSON.stringify(MEALS_DATA));
+            }
+            return data;
+        }
+
+        // Read the current item structure from the DOM (for save-after-edit)
+        function readItemsFromDOM() {
+            const items = {};
+            document.querySelectorAll('#inventory-container > .section').forEach(section => {
+                if (section.id === 'section-meals') return;
+                const titleEl = section.querySelector('.section-header-title');
+                if (!titleEl) return;
+                const sectionName = titleEl.textContent.trim();
+                items[sectionName] = [];
+                section.querySelectorAll('.item-row').forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    items[sectionName].push({
+                        itemNumber: row.querySelector('.item-number')?.textContent?.trim() || '',
+                        name: row.querySelector('.item-name')?.textContent?.trim() || '',
+                        brand: row.querySelector('.item-brand')?.textContent?.trim() || '',
+                        pack: cells[2]?.textContent?.trim() || '',
+                        price: parseFloat(row.getAttribute('data-price')) || 0
+                    });
+                });
+            });
+            return items;
+        }
+
+        function readMealsFromDOM() {
+            const meals = [];
+            document.querySelectorAll('#meals-tbody .meal-row').forEach(row => {
+                const nameInput = row.querySelector('input[type="text"]');
+                const inputs = row.querySelectorAll('input[type="number"]');
+                meals.push({
+                    name: nameInput?.value || '',
+                    price: parseFloat(inputs[0]?.value) || 0
+                });
+            });
+            return meals;
+        }
+
+        function persistItemsList() {
+            if (!currentLocation) return Promise.resolve();
+            return locationItemsRef(currentLocation).set(readItemsFromDOM())
+                .then(() => console.log('[Inventory] Persisted items list for', currentLocation))
+                .catch(err => console.error('[Inventory] persistItemsList failed:', err));
+        }
+        function persistMealsList() {
+            if (!currentLocation) return Promise.resolve();
+            return locationMealsRef(currentLocation).set(readMealsFromDOM())
+                .then(() => console.log('[Inventory] Persisted meals list for', currentLocation))
+                .catch(err => console.error('[Inventory] persistMealsList failed:', err));
+        }
+
+        async function rebuildDOMForLocation(loc) {
+            const [items, meals] = await Promise.all([
+                loadItemsForLocation(loc),
+                loadMealsForLocation(loc)
+            ]);
+            initializeInventory(items, meals);
+            assignFirebaseKeys();
+            updateTotals();
+        }
+
         // Connect to Firebase for the selected month + location
         function connectToMonth() {
             const monthKey = getMonthKey();
@@ -1277,8 +1396,8 @@
             });
         }
 
-        // Override delete functions to also remove from Firebase
-        const origDeleteItemRow = deleteItemRow;
+        // Override delete functions to also remove from Firebase AND persist the
+        // structural items/meals list so the deletion sticks across months and reloads
         deleteItemRow = function(btn) {
             if (confirm('Remove this item?')) {
                 const row = btn.closest('tr');
@@ -1286,10 +1405,10 @@
                 row.remove();
                 updateTotals();
                 if (fbKey) removeFirebaseKey(fbKey);
+                persistItemsList();
             }
         };
 
-        const origDeleteMealRow = deleteMealRow;
         deleteMealRow = function(btn) {
             if (confirm('Remove this meal?')) {
                 const row = btn.closest('tr');
@@ -1297,7 +1416,22 @@
                 row.remove();
                 updateTotals();
                 if (fbKey) removeFirebaseKey(fbKey);
+                persistMealsList();
             }
+        };
+
+        // Override add functions to assign Firebase keys to the new row + persist the list
+        const origAddNewItem = addNewItem;
+        addNewItem = function(sectionId) {
+            origAddNewItem(sectionId);
+            assignFirebaseKeys();
+            persistItemsList();
+        };
+        const origAddNewMeal = addNewMeal;
+        addNewMeal = function() {
+            origAddNewMeal();
+            assignFirebaseKeys();
+            persistMealsList();
         };
 
         // Month selector change: clear inputs and load new month
@@ -1312,12 +1446,24 @@
             connectToMonth();
         });
 
-        // Location selector change: persist choice and reconnect Firebase
-        document.getElementById('locationSelect').addEventListener('change', () => {
+        // Location selector change: rebuild DOM from new location's saved items, then reconnect month
+        document.getElementById('locationSelect').addEventListener('change', async () => {
             const loc = getLocation();
             try { localStorage.setItem(LOCATION_KEY, loc); } catch(e) {}
-            currentLocation = ''; // force reconnect
+
+            // Detach old month listener
+            if (monthRef) { monthRef.off(); monthRef = null; }
             currentMonthKey = '';
+            currentLocation = loc;
+
+            // Update the badge immediately for visual feedback
+            const badge = document.getElementById('locationBadge');
+            if (badge) badge.textContent = getLocationLabel();
+
+            // Rebuild the DOM from this location's saved items + meals
+            await rebuildDOMForLocation(loc);
+
+            // Now connect to the month for quantities
             connectToMonth();
         });
 
@@ -1376,7 +1522,7 @@
         });
 
         // Initialize the main app (called after successful login)
-        function startApp() {
+        async function startApp() {
             const now = new Date();
             const monthStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
             document.getElementById('monthSelect').value = monthStr;
@@ -1389,12 +1535,15 @@
                 }
             } catch(e) {}
 
-            initializeInventory();
-            assignFirebaseKeys();
-            updateTotals();
+            currentLocation = getLocation();
+            const badge = document.getElementById('locationBadge');
+            if (badge) badge.textContent = getLocationLabel();
+
+            // Build DOM from this location's saved items list (or seed it on first load)
+            await rebuildDOMForLocation(currentLocation);
             attachFirebaseListeners();
             connectToMonth();
-            console.log('[Inventory] App started, month=' + monthStr + ', location=' + getLocation());
+            console.log('[Inventory] App started, month=' + monthStr + ', location=' + currentLocation);
         }
 
         // On page load: check if already logged in
