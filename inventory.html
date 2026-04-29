@@ -1214,6 +1214,29 @@
         function locationItemsRef(loc) { return db.ref('inventory/' + loc + '/items'); }
         function locationMealsRef(loc) { return db.ref('inventory/' + loc + '/meals'); }
 
+        // Firebase forbids "/", ".", "#", "$", "[", "]" in keys. Section names like
+        // "Chemicals/Janitorial Supplies" need escaping when used as a Firebase key.
+        function escapeSectionKey(name) {
+            return name.replace(/\//g, '__SLASH__').replace(/\./g, '__DOT__')
+                       .replace(/#/g, '__HASH__').replace(/\$/g, '__DOLLAR__')
+                       .replace(/\[/g, '__LBRACK__').replace(/\]/g, '__RBRACK__');
+        }
+        function unescapeSectionKey(name) {
+            return name.replace(/__SLASH__/g, '/').replace(/__DOT__/g, '.')
+                       .replace(/__HASH__/g, '#').replace(/__DOLLAR__/g, '$')
+                       .replace(/__LBRACK__/g, '[').replace(/__RBRACK__/g, ']');
+        }
+        function escapeItemsForFirebase(items) {
+            const out = {};
+            Object.keys(items).forEach(k => { out[escapeSectionKey(k)] = items[k]; });
+            return out;
+        }
+        function unescapeItemsFromFirebase(items) {
+            const out = {};
+            Object.keys(items).forEach(k => { out[unescapeSectionKey(k)] = items[k]; });
+            return out;
+        }
+
         // Apply latest INVENTORY_DATA prices to a saved items list (matching by item number)
         function syncPricesFromConstant(savedData) {
             const flatLatest = {};
@@ -1237,15 +1260,16 @@
 
         async function loadItemsForLocation(loc) {
             const snap = await locationItemsRef(loc).once('value');
-            let data = snap.val();
-            if (!data) {
+            let raw = snap.val();
+            if (!raw) {
                 // First time at this location — seed with the full BEK list
-                await locationItemsRef(loc).set(INVENTORY_DATA);
+                await locationItemsRef(loc).set(escapeItemsForFirebase(INVENTORY_DATA));
                 return JSON.parse(JSON.stringify(INVENTORY_DATA));
             }
+            let data = unescapeItemsFromFirebase(raw);
             // Sync any updated prices from the latest INVENTORY_DATA
             if (syncPricesFromConstant(data)) {
-                await locationItemsRef(loc).set(data);
+                await locationItemsRef(loc).set(escapeItemsForFirebase(data));
                 console.log('[Inventory] Synced updated prices to', loc);
             }
             return data;
@@ -1299,7 +1323,7 @@
 
         function persistItemsList() {
             if (!currentLocation) return Promise.resolve();
-            return locationItemsRef(currentLocation).set(readItemsFromDOM())
+            return locationItemsRef(currentLocation).set(escapeItemsForFirebase(readItemsFromDOM()))
                 .then(() => console.log('[Inventory] Persisted items list for', currentLocation))
                 .catch(err => console.error('[Inventory] persistItemsList failed:', err));
         }
