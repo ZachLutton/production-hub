@@ -1258,6 +1258,20 @@
             return changed;
         }
 
+        // Reorder a sections-object to match the canonical INVENTORY_DATA section order.
+        // Firebase doesn't preserve object key insertion order on read, so we enforce it here.
+        function reorderSectionsByConstant(data) {
+            const ordered = {};
+            Object.keys(INVENTORY_DATA).forEach(sec => {
+                if (data[sec]) ordered[sec] = data[sec];
+            });
+            // Preserve any extra sections that aren't in the constant (shouldn't normally happen)
+            Object.keys(data).forEach(sec => {
+                if (!ordered[sec]) ordered[sec] = data[sec];
+            });
+            return ordered;
+        }
+
         async function loadItemsForLocation(loc) {
             const snap = await locationItemsRef(loc).once('value');
             let raw = snap.val();
@@ -1266,7 +1280,7 @@
                 await locationItemsRef(loc).set(escapeItemsForFirebase(INVENTORY_DATA));
                 return JSON.parse(JSON.stringify(INVENTORY_DATA));
             }
-            let data = unescapeItemsFromFirebase(raw);
+            let data = reorderSectionsByConstant(unescapeItemsFromFirebase(raw));
             // Sync any updated prices from the latest INVENTORY_DATA
             if (syncPricesFromConstant(data)) {
                 await locationItemsRef(loc).set(escapeItemsForFirebase(data));
