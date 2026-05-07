@@ -14,6 +14,11 @@
             box-sizing: border-box;
         }
 
+        html, body {
+            /* Prevent iPad/iPhone pull-to-refresh while counting */
+            overscroll-behavior-y: contain;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background-color: #f5f5f5;
@@ -428,6 +433,7 @@
     <!-- MAIN CONTENT (hidden until login) -->
     <div id="main-content">
     <div class="header">
+        <div style="text-align:left;margin-bottom:8px;"><a href="dashboard.html" style="color:#e8f5e0;text-decoration:none;font-size:14px;font-weight:600;">← Dashboard</a></div>
         <h1>Zedric's Monthly Inventory</h1>
         <div class="header-controls">
             <label for="locationSelect">Location:</label>
@@ -443,6 +449,7 @@
         <div class="note">Prices updated from BEK Order Guide — April 2026</div>
         <div id="locationBadge" style="margin-top:8px;font-size:16px;font-weight:700;background:rgba(255,255,255,0.15);display:inline-block;padding:4px 14px;border-radius:20px;">Main Location</div>
         <div id="syncStatus" style="margin-top:10px;font-size:14px;"><span style="color:#ff6b6b;">&#9679;</span> Connecting...</div>
+        <div id="lastSaved" style="margin-top:4px;font-size:13px;color:#aaa;">No changes yet</div>
     </div>
 
     <div id="inventory-container"></div>
@@ -1130,24 +1137,51 @@
             });
         }
 
-        // Save a single field to Firebase
+        // Save a single field to Firebase. Returns the promise so callers can
+        // tie protection windows to actual save completion (not a fixed timer).
         function saveSingleField(fbKey, value) {
-            if (!monthRef) { console.warn('[Inventory] saveSingleField: monthRef is null!'); return; }
+            if (!monthRef) { console.warn('[Inventory] saveSingleField: monthRef is null!'); return Promise.reject('no monthRef'); }
             const update = {};
             update[fbKey] = value;
-            monthRef.update(update).then(() => {
+            updateLastSavedTime();
+            return monthRef.update(update).then(() => {
                 console.log('[Inventory] Saved:', fbKey, '=', value);
+                updateLastSavedTime(true);
             }).catch(err => {
                 console.error('[Inventory] Save failed:', fbKey, err);
+                throw err;
             });
         }
 
         // Save a meal's full data (qty + price) to Firebase
         function saveMealField(fbKey, data) {
-            if (!monthRef) return;
+            if (!monthRef) return Promise.reject('no monthRef');
             const update = {};
             update[fbKey] = data;
-            monthRef.update(update);
+            updateLastSavedTime();
+            return monthRef.update(update).then(() => {
+                updateLastSavedTime(true);
+            }).catch(err => {
+                console.error('[Inventory] Save meal failed:', fbKey, err);
+                throw err;
+            });
+        }
+
+        // "Last saved at HH:MM:SS" indicator
+        function updateLastSavedTime(success) {
+            const el = document.getElementById('lastSaved');
+            if (!el) return;
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2,'0');
+            const mm = String(now.getMinutes()).padStart(2,'0');
+            const ss = String(now.getSeconds()).padStart(2,'0');
+            if (success) {
+                el.textContent = 'Saved at ' + hh + ':' + mm + ':' + ss;
+                el.style.color = '#4CAF50';
+            } else {
+                el.textContent = 'Saving...';
+                el.style.color = '#999';
+            }
         }
 
         // Delete a key from Firebase
@@ -1176,25 +1210,32 @@
                 if (key) mealRows[key] = row;
             });
 
-            // Apply all values from Firebase
+            // Apply all values from Firebase. NEVER overwrite an input the user is
+            // actively typing in (focused), and never overwrite a field whose save
+            // is still in flight (suppressSync flag is set).
+            const active = document.activeElement;
             Object.keys(data).forEach(key => {
-                if (suppressSync[key]) return; // skip fields being actively edited
+                if (suppressSync[key]) return; // save is in flight — don't apply stale value
 
                 if (key.startsWith('s_') && supplyRows[key]) {
                     const input = supplyRows[key].querySelector('input[type="number"]');
+                    if (!input || input === active) return; // never disturb the focused input
                     const val = data[key];
-                    if (input && parseFloat(input.value || 0) !== parseFloat(val || 0)) {
-                        input.value = val || '';
+                    const newDisplay = (val === null || val === undefined || val === '') ? '' : String(val);
+                    if (input.value !== newDisplay) {
+                        input.value = newDisplay;
                     }
                 } else if (key.startsWith('m_') && mealRows[key]) {
                     const mealData = data[key];
                     if (typeof mealData === 'object') {
                         const inputs = mealRows[key].querySelectorAll('input[type="number"]');
-                        if (inputs[0] && parseFloat(inputs[0].value || 0) !== parseFloat(mealData.price || 0)) {
-                            inputs[0].value = mealData.price || '';
+                        if (inputs[0] && inputs[0] !== active) {
+                            const v = (mealData.price === null || mealData.price === undefined) ? '' : String(mealData.price);
+                            if (inputs[0].value !== v) inputs[0].value = v;
                         }
-                        if (inputs[1] && parseFloat(inputs[1].value || 0) !== parseFloat(mealData.qty || 0)) {
-                            inputs[1].value = mealData.qty || '';
+                        if (inputs[1] && inputs[1] !== active) {
+                            const v = (mealData.qty === null || mealData.qty === undefined) ? '' : String(mealData.qty);
+                            if (inputs[1].value !== v) inputs[1].value = v;
                         }
                     }
                 }
@@ -1397,19 +1438,33 @@
             });
         }
 
-        // Attach input listeners for real-time per-field saving
+        // Attach input listeners for real-time per-field saving.
+        // suppressSync is held until the actual save promise resolves (with a
+        // safety timeout fallback so a stuck save doesn't block sync forever).
+        function holdAndSave(fbKey, savePromise) {
+            suppressSync[fbKey] = true;
+            const safetyTimeout = setTimeout(() => { delete suppressSync[fbKey]; }, 8000);
+            savePromise.then(() => {
+                clearTimeout(safetyTimeout);
+                // Brief grace period after save completes before re-enabling listener
+                setTimeout(() => { delete suppressSync[fbKey]; }, 250);
+            }).catch(() => {
+                clearTimeout(safetyTimeout);
+                // On save failure, keep protection on for 5s then release so the
+                // listener can eventually re-sync from server. Critically this
+                // means a typed value stays visible until the next confirmed sync.
+                setTimeout(() => { delete suppressSync[fbKey]; }, 5000);
+            });
+        }
+
         function attachFirebaseListeners() {
-            // When a supply item On Hand changes, save just that field
             document.addEventListener('input', (e) => {
                 const row = e.target.closest('.item-row');
                 if (row) {
                     const fbKey = row.getAttribute('data-fbkey');
                     if (fbKey) {
                         const val = parseFloat(e.target.value) || 0;
-                        suppressSync[fbKey] = true;
-                        saveSingleField(fbKey, val);
-                        // Release suppression after a short delay
-                        setTimeout(() => { delete suppressSync[fbKey]; }, 1000);
+                        holdAndSave(fbKey, saveSingleField(fbKey, val));
                     }
                     updateTotals();
                     return;
@@ -1424,9 +1479,7 @@
                         const qty = parseFloat(inputs[1].value) || 0;
                         const nameInput = mealRow.querySelector('input[type="text"]');
                         const name = nameInput?.value || '';
-                        suppressSync[fbKey] = true;
-                        saveMealField(fbKey, { name, price, qty });
-                        setTimeout(() => { delete suppressSync[fbKey]; }, 1000);
+                        holdAndSave(fbKey, saveMealField(fbKey, { name, price, qty }));
                     }
                     updateTotals();
                     return;
