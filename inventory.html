@@ -814,7 +814,7 @@
                 <td><div class="item-name">${item.name}</div><div class="item-brand">${item.brand || ''}</div></td>
                 <td>${item.pack || ''}</td>
                 ${priceCell}
-                <td><input type="number" step="0.01" min="0" oninput="updateTotals()"></td>
+                <td><input type="number" step="0.01" min="0" class="qty-input" oninput="updateTotals()"></td>
                 <td class="total">$0.00</td>
                 <td><button class="delete-btn" tabindex="-1" onclick="deleteItemRow(this)">X</button></td>
             `;
@@ -1055,7 +1055,9 @@
                 tbody.querySelectorAll('.item-row').forEach(row => {
                     itemCount++;
                     const price = parseFloat(row.getAttribute('data-price')) || 0;
-                    const input = row.querySelector('input[type="number"]');
+                    // Use .qty-input specifically — otherwise for non-BEK rows the first
+                    // input[type=number] is the editable price, not the quantity.
+                    const input = row.querySelector('.qty-input') || row.querySelector('input[type="number"]');
                     const onHand = parseFloat(input.value) || 0;
                     const total = price * onHand;
                     row.querySelector('.total').textContent = '$' + total.toFixed(2);
@@ -1264,7 +1266,8 @@
                 if (suppressSync[key]) return; // save is in flight — don't apply stale value
 
                 if (key.startsWith('s_') && supplyRows[key]) {
-                    const input = supplyRows[key].querySelector('input[type="number"]');
+                    // Target the QTY input specifically (never the editable price input)
+                    const input = supplyRows[key].querySelector('.qty-input') || supplyRows[key].querySelector('input[type="number"]');
                     if (!input || input === active) return; // never disturb the focused input
                     const val = data[key];
                     const newDisplay = (val === null || val === undefined || val === '') ? '' : String(val);
@@ -1507,6 +1510,12 @@
             document.addEventListener('input', (e) => {
                 const row = e.target.closest('.item-row');
                 if (row) {
+                    // Only save qty-input changes here. Price-input changes are handled by
+                    // onPriceEdited(), which persists them to the items list (not the monthly qty).
+                    if (!e.target.classList.contains('qty-input')) {
+                        updateTotals();
+                        return;
+                    }
                     const fbKey = row.getAttribute('data-fbkey');
                     if (fbKey) {
                         const val = parseFloat(e.target.value) || 0;
