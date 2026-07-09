@@ -911,6 +911,7 @@
         // and persist the whole items list so the new price sticks across reloads
         // and syncs to other tablets.
         let _pricePersistTimer = null;
+        let _mealPersistTimer = null;
         function onPriceEdited(input) {
             const row = input.closest('.item-row');
             if (!row) return;
@@ -1526,6 +1527,12 @@
                         const name = nameInput?.value || '';
                         holdAndSave(fbKey, saveMealField(fbKey, { name, price, qty }));
                     }
+                    // Persist the structural meals list too (debounced) so name + price edits
+                    // stick across reloads. Without this, renamed meals revert to their old name.
+                    clearTimeout(_mealPersistTimer);
+                    _mealPersistTimer = setTimeout(() => {
+                        if (typeof persistMealsList === 'function') persistMealsList();
+                    }, 500);
                     updateTotals();
                     return;
                 }
