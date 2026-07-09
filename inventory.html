@@ -787,17 +787,33 @@
             createMealsSection(mealsData);
         }
 
+        // Build a set of BEK item numbers from INVENTORY_DATA — used to decide
+        // whether an item's price should be editable or auto-synced from BEK
+        const BEK_ITEM_NUMBERS = new Set();
+        Object.values(INVENTORY_DATA).forEach(arr => {
+            (arr || []).forEach(it => { if (it.itemNumber) BEK_ITEM_NUMBERS.add(it.itemNumber); });
+        });
+        function isBekItem(itemNumber) {
+            return itemNumber && BEK_ITEM_NUMBERS.has(itemNumber);
+        }
+
         function createItemRow(item, sectionId) {
             const row = document.createElement('tr');
             row.className = 'item-row';
             row.setAttribute('data-price', item.price);
             row.setAttribute('data-section', sectionId);
 
+            // Non-BEK items get an editable price input; BEK items are static
+            const bek = isBekItem(item.itemNumber);
+            const priceCell = bek
+                ? `<td class="align-center">$${item.price.toFixed(2)}</td>`
+                : `<td class="align-center" style="white-space:nowrap;">$<input type="number" step="0.01" min="0" value="${item.price.toFixed(2)}" class="price-input" tabindex="-1" style="width:70px;padding:6px;font-size:15px;border:1px solid #b8d4a0;border-radius:4px;text-align:right;background:#f9fce8;" oninput="onPriceEdited(this)"></td>`;
+
             row.innerHTML = `
                 <td><div class="item-number">${item.itemNumber || ''}</div></td>
                 <td><div class="item-name">${item.name}</div><div class="item-brand">${item.brand || ''}</div></td>
                 <td>${item.pack || ''}</td>
-                <td class="align-center">$${item.price.toFixed(2)}</td>
+                ${priceCell}
                 <td><input type="number" step="0.01" min="0" oninput="updateTotals()"></td>
                 <td class="total">$0.00</td>
                 <td><button class="delete-btn" tabindex="-1" onclick="deleteItemRow(this)">X</button></td>
@@ -889,6 +905,23 @@
                 btn.closest('tr').remove();
                 updateTotals();
             }
+        }
+
+        // When a non-BEK price input is edited: update data-price, recompute totals,
+        // and persist the whole items list so the new price sticks across reloads
+        // and syncs to other tablets.
+        let _pricePersistTimer = null;
+        function onPriceEdited(input) {
+            const row = input.closest('.item-row');
+            if (!row) return;
+            const newPrice = parseFloat(input.value) || 0;
+            row.setAttribute('data-price', newPrice);
+            updateTotals();
+            // Debounce so rapid typing doesn't hammer Firebase
+            clearTimeout(_pricePersistTimer);
+            _pricePersistTimer = setTimeout(() => {
+                if (typeof persistItemsList === 'function') persistItemsList();
+            }, 500);
         }
 
         function addNewItem(sectionId) {
