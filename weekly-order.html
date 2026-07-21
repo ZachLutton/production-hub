@@ -480,14 +480,21 @@
 
         window.editPar = async function(key, name, currentPar, currentUnit) {
             if (currentRole !== 'admin') { alert('Only admin can edit par levels.'); return; }
-            const valInput = prompt('Set par level for ' + name + ':\n(How many should we always have on hand?)', String(currentPar || ''));
-            if (valInput === null) return;
-            const parsed = parseFloat(valInput);
+            // Single prompt: user types "5 each" or "3 boxes" or "1 gallon" or just "5"
+            const currentCombined = currentPar
+                ? (currentUnit ? currentPar + ' ' + currentUnit : String(currentPar))
+                : '';
+            const input = prompt(
+                'Set par for ' + name + ':\n' +
+                '(Type value + unit, e.g. "5 each", "3 boxes", "1 gallon" — or just a number)',
+                currentCombined
+            );
+            if (input === null) return;
+            const match = input.trim().match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+            if (!match) { alert('Please start with a number, then optionally a unit'); return; }
+            const parsed = parseFloat(match[1]);
             if (isNaN(parsed) || parsed < 0) { alert('Please enter a valid number'); return; }
-
-            const unitInput = prompt('Unit for ' + name + ':\n(e.g. each, box, case, count, gallon, lb — or leave blank)', currentUnit || '');
-            if (unitInput === null) return;
-            const unit = unitInput.trim();
+            const unit = (match[2] || '').trim();
 
             const payload = { value: parsed, unit };
             parData[key] = payload;
