@@ -519,7 +519,22 @@
         }
 
         function attachRealtimeListeners() {
-            // Listen for on-hand changes for the current week
+            // Listen for ITEM LIST changes — re-render when Rim's items list updates
+            db.ref('inventory/' + currentLocation + '/items').on('value', snap => {
+                const raw = snap.val() || {};
+                const out = {};
+                Object.keys(raw).forEach(k => { out[unescapeSection(k)] = raw[k]; });
+                itemsData = out;
+                render();
+            });
+
+            // Listen for PAR changes — re-render when pars update
+            db.ref('weekly_orders/' + currentLocation + '/pars').on('value', snap => {
+                parData = snap.val() || {};
+                render();
+            });
+
+            // Listen for on-hand changes for the current week (per-field, no full re-render)
             const ref = db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey);
             ref.on('value', snap => {
                 const data = snap.val() || {};
@@ -546,11 +561,16 @@
         }
 
         // ==================== EVENT HANDLERS ====================
+        function detachAllListeners() {
+            db.ref('inventory/' + currentLocation + '/items').off();
+            db.ref('weekly_orders/' + currentLocation + '/pars').off();
+            db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey).off();
+        }
+
         document.getElementById('locationSelect').addEventListener('change', async () => {
             const loc = document.getElementById('locationSelect').value;
             try { localStorage.setItem(LOCATION_KEY, loc); } catch(e) {}
-            // Detach old listener
-            db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey).off();
+            detachAllListeners();
             currentLocation = loc;
             document.getElementById('locationBadge').textContent = loc === 'rim' ? 'The Rim' : 'Main';
             await reloadAll();
@@ -562,7 +582,27 @@
             currentWeekKey = document.getElementById('weekSelect').value;
             onHandData = await loadOnHand(currentLocation, currentWeekKey);
             render();
-            attachRealtimeListeners();
+            // Only re-attach the on-hand listener; items and pars are still listening
+            const ref = db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey);
+            ref.on('value', snap => {
+                const data = snap.val() || {};
+                Object.keys(data).forEach(k => {
+                    if (suppressSync[k]) return;
+                    onHandData[k] = data[k];
+                    const input = document.querySelector('input.onhand-input[data-key="' + k + '"]');
+                    if (input && document.activeElement !== input && parseFloat(input.value || 0) !== parseFloat(data[k] || 0)) {
+                        input.value = data[k] || '';
+                        const par = parseFloat(parData[k]) || 0;
+                        const need = Math.max(0, par - (parseFloat(data[k]) || 0));
+                        const needSpan = document.getElementById('need-' + k);
+                        if (needSpan) {
+                            needSpan.textContent = need > 0 ? need.toFixed(2) : '—';
+                            needSpan.className = 'need-value ' + (need > 0 ? 'need-order' : 'need-zero');
+                        }
+                    }
+                });
+                setSyncStatus(true);
+            });
         });
 
         document.querySelectorAll('input[name="filter"]').forEach(radio => {
