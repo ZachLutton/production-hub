@@ -107,6 +107,7 @@
             text-align: center; white-space: nowrap;
         }
         .par-value { font-weight: 600; color: #b85400; }
+        .par-unit { font-size: 12px; color: #888; font-weight: 500; }
         .par-input, .onhand-input {
             width: 70px; padding: 8px; font-size: 15px;
             border: 1px solid #ccc; border-radius: 4px; text-align: right;
@@ -130,6 +131,14 @@
             min-width: 26px; margin-left: 4px;
         }
         .edit-par-btn:hover { background: #fff4e0; color: #b85400; border-color: #b85400; }
+
+        .delete-item-btn {
+            background: #e57373; color: white; border: none;
+            border-radius: 4px; padding: 6px 10px; font-size: 14px;
+            font-weight: 700; cursor: pointer; min-width: 32px;
+        }
+        .delete-item-btn:hover { background: #c62828; }
+        @media print { .delete-item-btn { display: none !important; } }
 
         .filter-bar {
             background: white; padding: 12px 16px; border-radius: 8px;
@@ -362,10 +371,12 @@
                 const rowsData = items.map((item, idx) => {
                     if (!item) return null;
                     const key = getItemKey(sectionName, item, idx);
-                    const par = parseFloat(parData[key]) || 0;
+                    const parInfo = getParInfo(key);
+                    const par = parInfo.value;
+                    const unit = parInfo.unit;
                     const onHand = parseFloat(onHandData[key]) || 0;
                     const need = Math.max(0, par - onHand);
-                    return { item, idx, key, par, onHand, need };
+                    return { item, idx, key, par, unit, onHand, need };
                 }).filter(x => x);
 
                 let visible = rowsData;
@@ -397,6 +408,7 @@
                                     <th style="width:90px;">Par</th>
                                     <th style="width:110px;">On Hand</th>
                                     <th style="width:110px;">Need</th>
+                                    ${currentRole === 'admin' ? '<th style="width:50px;"></th>' : ''}
                                 </tr>
                             </thead>
                             <tbody id="tbody-${sectionId}"></tbody>
@@ -410,10 +422,16 @@
                     const tr = document.createElement('tr');
                     tr.setAttribute('data-key', r.key);
 
+                    const parDisplay = r.par > 0
+                        ? `${r.par}${r.unit ? ' <span class="par-unit">' + r.unit + '</span>' : ''}`
+                        : '—';
                     const parCell = currentRole === 'admin'
-                        ? `<td class="par-cell"><span class="par-value">${r.par || '—'}</span><button class="edit-par-btn" onclick="editPar('${r.key.replace(/'/g,"\\'")}', '${(r.item.name || '').replace(/'/g,"\\'")}', ${r.par})" title="Edit par">✎</button></td>`
-                        : `<td class="par-cell"><span class="par-value">${r.par || '—'}</span></td>`;
+                        ? `<td class="par-cell"><span class="par-value">${parDisplay}</span><button class="edit-par-btn" onclick="editPar('${r.key.replace(/'/g,"\\'")}', '${(r.item.name || '').replace(/'/g,"\\'")}', ${r.par}, '${(r.unit || '').replace(/'/g,"\\'")}')" title="Edit par">✎</button></td>`
+                        : `<td class="par-cell"><span class="par-value">${parDisplay}</span></td>`;
 
+                    const deleteCell = currentRole === 'admin'
+                        ? `<td style="text-align:center;"><button class="delete-item-btn" onclick="deleteItem('${sectionName.replace(/'/g,"\\'")}', ${r.idx}, '${(r.item.name || '').replace(/'/g,"\\'")}')" title="Remove this item">X</button></td>`
+                        : '';
                     tr.innerHTML = `
                         <td class="item-num">${r.item.itemNumber || ''}</td>
                         <td>
@@ -429,8 +447,9 @@
                                    oninput="onOnHandEdited(this)">
                         </td>
                         <td class="need-cell">
-                            <span class="need-value ${r.need > 0 ? 'need-order' : 'need-zero'}" id="need-${r.key}">${r.need > 0 ? r.need.toFixed(2) : '—'}</span>
+                            <span class="need-value ${r.need > 0 ? 'need-order' : 'need-zero'}" id="need-${r.key}">${r.need > 0 ? r.need.toFixed(2) : '—'}</span>${r.need > 0 && r.unit ? ' <span class="par-unit">' + r.unit + '</span>' : ''}
                         </td>
+                        ${deleteCell}
                     `;
                     tbody.appendChild(tr);
                 });
@@ -450,18 +469,63 @@
             toggle.textContent = content.classList.contains('expanded') ? '▼' : '▶';
         };
 
-        window.editPar = async function(key, name, currentPar) {
+        // Read par info handling both old (number) and new ({value, unit}) formats
+        function getParInfo(key) {
+            const raw = parData[key];
+            if (raw === undefined || raw === null) return { value: 0, unit: '' };
+            if (typeof raw === 'number') return { value: raw, unit: '' };
+            if (typeof raw === 'object') return { value: parseFloat(raw.value) || 0, unit: raw.unit || '' };
+            return { value: parseFloat(raw) || 0, unit: '' };
+        }
+
+        window.editPar = async function(key, name, currentPar, currentUnit) {
             if (currentRole !== 'admin') { alert('Only admin can edit par levels.'); return; }
-            const input = prompt('Set par level for ' + name + ':\n(How many should we always have on hand?)', String(currentPar || ''));
-            if (input === null) return;
-            const parsed = parseFloat(input);
+            const valInput = prompt('Set par level for ' + name + ':\n(How many should we always have on hand?)', String(currentPar || ''));
+            if (valInput === null) return;
+            const parsed = parseFloat(valInput);
             if (isNaN(parsed) || parsed < 0) { alert('Please enter a valid number'); return; }
-            parData[key] = parsed;
+
+            const unitInput = prompt('Unit for ' + name + ':\n(e.g. each, box, case, count, gallon, lb — or leave blank)', currentUnit || '');
+            if (unitInput === null) return;
+            const unit = unitInput.trim();
+
+            const payload = { value: parsed, unit };
+            parData[key] = payload;
             suppressSync[key] = true;
-            await db.ref('weekly_orders/' + currentLocation + '/pars/' + key).set(parsed);
+            await db.ref('weekly_orders/' + currentLocation + '/pars/' + key).set(payload);
             markSaved();
             setTimeout(() => { delete suppressSync[key]; }, 500);
             render();
+        };
+
+        // Escape a section name to a Firebase-safe key (matches the format used by the monthly inventory)
+        function escapeSectionKey(name) {
+            return name.replace(/\//g, '__SLASH__').replace(/\./g, '__DOT__')
+                       .replace(/#/g, '__HASH__').replace(/\$/g, '__DOLLAR__')
+                       .replace(/\[/g, '__LBRACK__').replace(/\]/g, '__RBRACK__');
+        }
+
+        window.deleteItem = async function(sectionName, idx, itemName) {
+            if (currentRole !== 'admin') { alert('Only admin can remove items.'); return; }
+            const locLabel = currentLocation === 'rim' ? 'The Rim' : 'Main';
+            if (!confirm('Remove "' + itemName + '" from ' + locLabel + '?\n\nThis removes it from BOTH the Monthly Inventory and the Weekly Order at ' + locLabel + '. Any par level and on-hand counts for this item at ' + locLabel + ' will also be deleted.\n\nMain / other locations are not affected.')) return;
+
+            const arr = Array.isArray(itemsData[sectionName]) ? [...itemsData[sectionName]] : [];
+            if (!arr[idx]) { alert('Item not found — try refreshing the page.'); return; }
+            const removed = arr[idx];
+            const oldKey = getItemKey(sectionName, removed, idx);
+            arr.splice(idx, 1);
+
+            // Save the trimmed section back to Firebase
+            const secKey = escapeSectionKey(sectionName);
+            await db.ref('inventory/' + currentLocation + '/items/' + secKey).set(arr);
+
+            // Also clean up any par level and on-hand data for the removed item
+            await db.ref('weekly_orders/' + currentLocation + '/pars/' + oldKey).remove();
+            await db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey + '/' + oldKey).remove();
+
+            markSaved();
+            // The items-list listener will trigger re-render automatically
         };
 
         window.onOnHandEdited = function(input) {
@@ -475,7 +539,7 @@
             setTimeout(() => { delete suppressSync[key]; }, 500);
 
             // Update just this row's need value without full re-render
-            const par = parseFloat(parData[key]) || 0;
+            const par = getParInfo(key).value;
             const need = Math.max(0, par - val);
             const needSpan = document.getElementById('need-' + key);
             if (needSpan) {
@@ -545,7 +609,7 @@
                     if (input && document.activeElement !== input && parseFloat(input.value || 0) !== parseFloat(data[k] || 0)) {
                         input.value = data[k] || '';
                         // Recompute need
-                        const par = parseFloat(parData[k]) || 0;
+                        const par = getParInfo(k).value;
                         const need = Math.max(0, par - (parseFloat(data[k]) || 0));
                         const needSpan = document.getElementById('need-' + k);
                         if (needSpan) {
@@ -592,7 +656,7 @@
                     const input = document.querySelector('input.onhand-input[data-key="' + k + '"]');
                     if (input && document.activeElement !== input && parseFloat(input.value || 0) !== parseFloat(data[k] || 0)) {
                         input.value = data[k] || '';
-                        const par = parseFloat(parData[k]) || 0;
+                        const par = getParInfo(k).value;
                         const need = Math.max(0, par - (parseFloat(data[k]) || 0));
                         const needSpan = document.getElementById('need-' + k);
                         if (needSpan) {
