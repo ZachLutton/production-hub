@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zedric's — Weekly Order</title>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { overscroll-behavior-y: contain; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f5f5f5; color: #333; padding: 10px;
+        }
+        #login-screen {
+            position: fixed; inset: 0; background: linear-gradient(135deg, #2d5016 0%, #4a7c2a 100%);
+            display: flex; align-items: center; justify-content: center; z-index: 1000;
+        }
+        .login-box {
+            background: white; padding: 40px 36px; border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.25); text-align: center;
+            max-width: 360px; width: 100%;
+        }
+        .login-box h1 { color: #2d5016; margin-bottom: 8px; font-size: 26px; }
+        .login-box p { color: #666; margin-bottom: 24px; font-size: 15px; }
+        .pin-input {
+            width: 100%; font-size: 32px; text-align: center; letter-spacing: 12px;
+            padding: 12px; border: 2px solid #ccc; border-radius: 8px; outline: none;
+        }
+        .pin-input:focus { border-color: #2d5016; }
+        .pin-error { color: #e74c3c; font-size: 14px; margin-top: 12px; min-height: 20px; }
+        #main-content { display: none; }
+
+        .header {
+            background-color: #2d5016; color: white; padding: 20px;
+            border-radius: 8px; margin-bottom: 20px; text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        .back-btn {
+            display: inline-block; background: white; color: #2d5016;
+            text-decoration: none; font-size: 15px; font-weight: 700;
+            padding: 10px 18px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        .header-controls {
+            display: flex; flex-wrap: wrap; gap: 10px;
+            justify-content: center; align-items: center; margin-top: 15px;
+        }
+        .header-controls label { font-weight: 600; }
+        .header-controls select, .header-controls input {
+            padding: 10px; font-size: 16px; border: none; border-radius: 4px; height: 44px;
+        }
+        .header-controls button {
+            padding: 10px 20px; font-size: 16px;
+            background-color: #e8f5e0; border: 2px solid #2d5016;
+            color: #2d5016; border-radius: 4px; cursor: pointer;
+            font-weight: 600; min-height: 44px;
+        }
+        .header-controls button:hover { background-color: #2d5016; color: #e8f5e0; }
+        .location-badge {
+            margin-top: 8px; font-size: 16px; font-weight: 700;
+            background: rgba(255,255,255,0.15); display: inline-block;
+            padding: 4px 14px; border-radius: 20px;
+        }
+        .role-badge {
+            margin-top: 8px; font-size: 14px; font-weight: 600; display: inline-block;
+            padding: 3px 12px; border-radius: 20px; margin-left: 8px;
+        }
+        .role-badge.admin { background: #fff4e0; color: #b85400; }
+        .role-badge.team { background: #e8f5e0; color: #2d5016; }
+        .sync { margin-top: 10px; font-size: 14px; }
+        .last-saved { margin-top: 4px; font-size: 13px; color: #ccc; }
+
+        .section {
+            margin-bottom: 20px; background-color: white; border-radius: 8px;
+            overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .section-header {
+            background-color: #e8f5e0; padding: 15px; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            user-select: none; font-weight: 600; border-left: 5px solid #2d5016;
+            min-height: 50px;
+        }
+        .section-header-title { font-size: 18px; color: #2d5016; }
+        .section-header-meta { font-size: 13px; color: #666; margin-top: 4px; }
+        .section-toggle { color: #2d5016; }
+        .section-content { display: none; padding: 0; }
+        .section-content.expanded { display: block; }
+
+        .order-table {
+            width: 100%; border-collapse: collapse;
+        }
+        .order-table th {
+            background: #f5f5f5; padding: 10px 8px; text-align: left;
+            font-size: 12px; text-transform: uppercase;
+            border-bottom: 2px solid #ddd; color: #666;
+        }
+        .order-table td {
+            padding: 12px 8px; border-bottom: 1px solid #eee; vertical-align: middle;
+        }
+        .item-name { font-weight: 600; color: #2d5016; }
+        .item-brand { font-size: 12px; color: #888; }
+        .item-num { color: #999; font-size: 12px; }
+
+        .par-cell, .onhand-cell, .need-cell {
+            text-align: center; white-space: nowrap;
+        }
+        .par-value { font-weight: 600; color: #b85400; }
+        .par-input, .onhand-input {
+            width: 70px; padding: 8px; font-size: 15px;
+            border: 1px solid #ccc; border-radius: 4px; text-align: right;
+        }
+        .onhand-input {
+            background: #fffff0; border-color: #b8d4a0;
+        }
+        .par-input {
+            background: #fff4e0; border-color: #ffc999;
+        }
+        .need-value {
+            font-size: 18px; font-weight: 700;
+        }
+        .need-zero { color: #999; }
+        .need-order { color: #b80000; }
+
+        .edit-par-btn {
+            background: transparent; color: #888;
+            border: 1px solid #ccc; border-radius: 4px;
+            padding: 2px 6px; font-size: 12px; cursor: pointer;
+            min-width: 26px; margin-left: 4px;
+        }
+        .edit-par-btn:hover { background: #fff4e0; color: #b85400; border-color: #b85400; }
+
+        .filter-bar {
+            background: white; padding: 12px 16px; border-radius: 8px;
+            margin-bottom: 16px; display: flex; gap: 12px; align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .filter-bar label { font-weight: 600; }
+
+        .grand-summary {
+            background: #2d5016; color: white; padding: 20px;
+            border-radius: 8px; margin-top: 20px; text-align: right;
+            font-size: 18px;
+        }
+        .grand-summary .big { font-size: 26px; font-weight: 700; margin-left: 12px; }
+
+        .empty-state {
+            text-align: center; padding: 30px; color: #888;
+        }
+
+        @media print {
+            body { padding: 0; background: white; }
+            .header, .filter-bar, .back-btn, .header-controls, .sync, .last-saved, .location-badge, .role-badge { display: none !important; }
+            .edit-par-btn, .par-input, .onhand-input { display: none !important; }
+            .section { box-shadow: none; page-break-inside: avoid; }
+            .section-content { display: block !important; }
+            .print-title { display: block !important; font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+        }
+        .print-title { display: none; }
+    </style>
+</head>
+<body>
+    <!-- LOGIN -->
+    <div id="login-screen">
+        <div class="login-box">
+            <h1>Zedric's Weekly Order</h1>
+            <p>Enter team PIN to continue</p>
+            <input type="password" id="pin-input" class="pin-input" maxlength="4" inputmode="numeric" pattern="[0-9]*" autofocus>
+            <div class="pin-error" id="pin-error"></div>
+        </div>
+    </div>
+
+    <div id="main-content">
+        <div class="header">
+            <div style="text-align:left; margin-bottom:14px;">
+                <a href="dashboard.html" class="back-btn">← Back to Dashboard</a>
+            </div>
+            <h1>Zedric's Weekly Order</h1>
+            <div class="header-controls">
+                <label for="locationSelect">Location:</label>
+                <select id="locationSelect">
+                    <option value="rim">The Rim</option>
+                    <option value="main">Main</option>
+                </select>
+                <label for="weekSelect">Week of:</label>
+                <input type="date" id="weekSelect">
+                <button onclick="window.print()">Print</button>
+            </div>
+            <div>
+                <span class="location-badge" id="locationBadge">The Rim</span>
+                <span class="role-badge team" id="roleBadge">Team</span>
+            </div>
+            <div class="sync" id="syncStatus"><span style="color:#ff6b6b;">●</span> Connecting...</div>
+            <div class="last-saved" id="lastSaved">No changes yet</div>
+        </div>
+
+        <div class="filter-bar">
+            <label>Show:</label>
+            <label style="font-weight:400;"><input type="radio" name="filter" value="all" checked> All items</label>
+            <label style="font-weight:400;"><input type="radio" name="filter" value="needed"> Only items needing order</label>
+            <label style="font-weight:400;"><input type="radio" name="filter" value="hasPar"> Only items with a par set</label>
+        </div>
+
+        <div id="order-container"></div>
+
+        <div class="grand-summary" id="grandSummary">Items to order: <span class="big" id="totalNeeded">0</span></div>
+    </div>
+
+    <script>
+        // ==================== FIREBASE INIT ====================
+        const firebaseConfig = {
+            apiKey: "AIzaSyBTP4-8CYNMhk9y21FfEBpG_yG5rSXt-Ao",
+            authDomain: "zedrics-production-hub.firebaseapp.com",
+            databaseURL: "https://zedrics-production-hub-default-rtdb.firebaseio.com",
+            projectId: "zedrics-production-hub",
+            storageBucket: "zedrics-production-hub.firebasestorage.app",
+            messagingSenderId: "1000819775934",
+            appId: "1:1000819775934:web:6a0f14f54f797b092841ef"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // ==================== PIN LOGIN ====================
+        const TEAM_PIN = '7590';
+        const ADMIN_PIN = '6895';
+        const LOGIN_KEY = 'zedrics_order_login';
+        const LOGIN_DURATION = 24 * 60 * 60 * 1000;
+        const LOCATION_KEY = 'zedrics_order_location';
+
+        let currentRole = 'team';
+        let currentLocation = 'rim';
+        let currentWeekKey = '';
+        let itemsData = {};
+        let parData = {};
+        let onHandData = {};
+        let suppressSync = {};
+
+        function readLogin() {
+            try {
+                const stored = localStorage.getItem(LOGIN_KEY);
+                if (!stored) return null;
+                const data = JSON.parse(stored);
+                if ((Date.now() - data.time) >= LOGIN_DURATION) return null;
+                if (data.pin !== TEAM_PIN && data.pin !== ADMIN_PIN) return null;
+                return data;
+            } catch(e) { return null; }
+        }
+        function saveLogin(pin) {
+            localStorage.setItem(LOGIN_KEY, JSON.stringify({pin: pin, time: Date.now()}));
+        }
+
+        document.getElementById('pin-input').addEventListener('input', function() {
+            document.getElementById('pin-error').textContent = '';
+            if (this.value.length === 4) {
+                if (this.value === ADMIN_PIN || this.value === TEAM_PIN) {
+                    const pin = this.value;
+                    firebase.auth().signInAnonymously().then(() => {
+                        saveLogin(pin);
+                        showApp(pin === ADMIN_PIN ? 'admin' : 'team');
+                    }).catch(err => {
+                        document.getElementById('pin-error').textContent = 'Auth error: ' + err.message;
+                    });
+                } else {
+                    document.getElementById('pin-error').textContent = 'Incorrect PIN';
+                    this.value = '';
+                }
+            }
+        });
+
+        function showApp(role) {
+            currentRole = role;
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+            const badge = document.getElementById('roleBadge');
+            badge.textContent = role === 'admin' ? 'Admin' : 'Team';
+            badge.className = 'role-badge ' + role;
+            startApp();
+        }
+
+        // ==================== HELPERS ====================
+        function unescapeSection(k) {
+            return k.replace(/__SLASH__/g, '/').replace(/__DOT__/g, '.')
+                    .replace(/__HASH__/g, '#').replace(/__DOLLAR__/g, '$')
+                    .replace(/__LBRACK__/g, '[').replace(/__RBRACK__/g, ']');
+        }
+        function getItemKey(sectionName, item, idx) {
+            const sectionId = sectionName.replace(/[^a-zA-Z0-9]/g, '_');
+            const raw = item.itemNumber || item.name || 'item';
+            const sanitized = raw.replace(/[.#$\/\[\]]/g, '_').replace(/\s+/g, '_').substring(0, 60);
+            return 'i_' + sectionId + '_' + sanitized + '_' + idx;
+        }
+
+        // Compute Tuesday date of a given date (or today), format YYYY-MM-DD
+        function getTuesdayOfWeek(date) {
+            const d = new Date(date);
+            const day = d.getDay(); // 0=Sun, 1=Mon, 2=Tue, ...
+            const diff = day <= 2 ? (2 - day) : (2 - day + 7);
+            d.setDate(d.getDate() + diff);
+            // If we're past Tuesday this week, use next week's Tuesday
+            if (diff < 0 || (diff === 0 && new Date().getDay() > 2)) d.setDate(d.getDate() + 7);
+            return d.toISOString().slice(0, 10);
+        }
+        function currentUpcomingTuesday() {
+            const d = new Date();
+            const day = d.getDay(); // 0=Sun, 1=Mon, 2=Tue, ...
+            let diff;
+            if (day < 2) diff = 2 - day;         // Sun/Mon -> upcoming Tuesday
+            else if (day === 2) diff = 0;        // Tue -> today
+            else diff = 2 - day + 7;             // Wed-Sat -> next Tuesday
+            d.setDate(d.getDate() + diff);
+            return d.toISOString().slice(0, 10);
+        }
+
+        function setSyncStatus(connected) {
+            const el = document.getElementById('syncStatus');
+            el.innerHTML = connected
+                ? '<span style="color:#4CAF50;">●</span> Live sync on'
+                : '<span style="color:#ff6b6b;">●</span> Connecting...';
+        }
+        function markSaved() {
+            const now = new Date();
+            const t = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
+            document.getElementById('lastSaved').textContent = 'Saved at ' + t;
+            document.getElementById('lastSaved').style.color = '#4CAF50';
+        }
+
+        // ==================== DATA LOADING ====================
+        async function loadItemsForLocation(loc) {
+            const snap = await db.ref('inventory/' + loc + '/items').once('value');
+            let raw = snap.val() || {};
+            // Unescape section keys
+            const out = {};
+            Object.keys(raw).forEach(k => { out[unescapeSection(k)] = raw[k]; });
+            return out;
+        }
+        async function loadPars(loc) {
+            const snap = await db.ref('weekly_orders/' + loc + '/pars').once('value');
+            return snap.val() || {};
+        }
+        async function loadOnHand(loc, weekKey) {
+            const snap = await db.ref('weekly_orders/' + loc + '/' + weekKey).once('value');
+            return snap.val() || {};
+        }
+
+        // ==================== RENDERING ====================
+        function render() {
+            const container = document.getElementById('order-container');
+            container.innerHTML = '';
+            const filter = document.querySelector('input[name="filter"]:checked')?.value || 'all';
+
+            const sectionOrder = ['Walk-in Cooler','Produce','Meat','Label Printing Table','Saute Line','Spice Rack','Kitchen Dry Supplies','Chemicals/Janitorial Supplies','Plating Team Supplies','Front of House Supplies','Bathroom Supplies','Freezer','Labeling Station'];
+            const orderedSections = sectionOrder.filter(s => itemsData[s]);
+            Object.keys(itemsData).forEach(s => { if (!orderedSections.includes(s)) orderedSections.push(s); });
+
+            let grandNeeded = 0;
+            orderedSections.forEach(sectionName => {
+                const items = itemsData[sectionName];
+                if (!Array.isArray(items) || items.length === 0) return;
+
+                // Compute rows and filter
+                const rowsData = items.map((item, idx) => {
+                    if (!item) return null;
+                    const key = getItemKey(sectionName, item, idx);
+                    const par = parseFloat(parData[key]) || 0;
+                    const onHand = parseFloat(onHandData[key]) || 0;
+                    const need = Math.max(0, par - onHand);
+                    return { item, idx, key, par, onHand, need };
+                }).filter(x => x);
+
+                let visible = rowsData;
+                if (filter === 'needed') visible = rowsData.filter(r => r.need > 0);
+                if (filter === 'hasPar') visible = rowsData.filter(r => r.par > 0);
+                if (visible.length === 0) return;
+
+                const section = document.createElement('div');
+                section.className = 'section';
+                const sectionId = sectionName.replace(/[^a-zA-Z0-9]/g, '_');
+                const totalNeededHere = visible.reduce((s, r) => s + r.need, 0);
+                grandNeeded += totalNeededHere;
+
+                section.innerHTML = `
+                    <div class="section-header" onclick="toggleSection('${sectionId}')">
+                        <div>
+                            <div class="section-header-title">${sectionName}</div>
+                            <div class="section-header-meta">${visible.length} items | ${totalNeededHere > 0 ? '<span style="color:#b80000;font-weight:700;">' + totalNeededHere.toFixed(2) + ' to order</span>' : 'nothing to order'}</div>
+                        </div>
+                        <div class="section-toggle">▼</div>
+                    </div>
+                    <div class="section-content expanded" id="content-${sectionId}">
+                        <table class="order-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:60px;">Item #</th>
+                                    <th>Name / Brand</th>
+                                    <th style="width:80px;">Pack</th>
+                                    <th style="width:90px;">Par</th>
+                                    <th style="width:110px;">On Hand</th>
+                                    <th style="width:110px;">Need</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tbody-${sectionId}"></tbody>
+                        </table>
+                    </div>
+                `;
+                container.appendChild(section);
+
+                const tbody = section.querySelector('#tbody-' + sectionId);
+                visible.forEach(r => {
+                    const tr = document.createElement('tr');
+                    tr.setAttribute('data-key', r.key);
+
+                    const parCell = currentRole === 'admin'
+                        ? `<td class="par-cell"><span class="par-value">${r.par || '—'}</span><button class="edit-par-btn" onclick="editPar('${r.key.replace(/'/g,"\\'")}', '${(r.item.name || '').replace(/'/g,"\\'")}', ${r.par})" title="Edit par">✎</button></td>`
+                        : `<td class="par-cell"><span class="par-value">${r.par || '—'}</span></td>`;
+
+                    tr.innerHTML = `
+                        <td class="item-num">${r.item.itemNumber || ''}</td>
+                        <td>
+                            <div class="item-name">${r.item.name || ''}</div>
+                            ${r.item.brand ? '<div class="item-brand">' + r.item.brand + '</div>' : ''}
+                        </td>
+                        <td>${r.item.pack || ''}</td>
+                        ${parCell}
+                        <td class="onhand-cell">
+                            <input type="number" class="onhand-input" step="0.01" min="0"
+                                   value="${r.onHand || ''}"
+                                   data-key="${r.key}"
+                                   oninput="onOnHandEdited(this)">
+                        </td>
+                        <td class="need-cell">
+                            <span class="need-value ${r.need > 0 ? 'need-order' : 'need-zero'}" id="need-${r.key}">${r.need > 0 ? r.need.toFixed(2) : '—'}</span>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            });
+
+            document.getElementById('totalNeeded').textContent = grandNeeded.toFixed(2);
+
+            if (container.children.length === 0) {
+                container.innerHTML = '<div class="empty-state">No items match the current filter.</div>';
+            }
+        }
+
+        window.toggleSection = function(sectionId) {
+            const content = document.getElementById('content-' + sectionId);
+            const toggle = content.parentElement.querySelector('.section-toggle');
+            content.classList.toggle('expanded');
+            toggle.textContent = content.classList.contains('expanded') ? '▼' : '▶';
+        };
+
+        window.editPar = async function(key, name, currentPar) {
+            if (currentRole !== 'admin') { alert('Only admin can edit par levels.'); return; }
+            const input = prompt('Set par level for ' + name + ':\n(How many should we always have on hand?)', String(currentPar || ''));
+            if (input === null) return;
+            const parsed = parseFloat(input);
+            if (isNaN(parsed) || parsed < 0) { alert('Please enter a valid number'); return; }
+            parData[key] = parsed;
+            suppressSync[key] = true;
+            await db.ref('weekly_orders/' + currentLocation + '/pars/' + key).set(parsed);
+            markSaved();
+            setTimeout(() => { delete suppressSync[key]; }, 500);
+            render();
+        };
+
+        window.onOnHandEdited = function(input) {
+            const key = input.getAttribute('data-key');
+            const val = parseFloat(input.value) || 0;
+            onHandData[key] = val;
+            suppressSync[key] = true;
+            db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey + '/' + key).set(val)
+                .then(() => markSaved())
+                .catch(err => console.error('Save error:', err));
+            setTimeout(() => { delete suppressSync[key]; }, 500);
+
+            // Update just this row's need value without full re-render
+            const par = parseFloat(parData[key]) || 0;
+            const need = Math.max(0, par - val);
+            const needSpan = document.getElementById('need-' + key);
+            if (needSpan) {
+                needSpan.textContent = need > 0 ? need.toFixed(2) : '—';
+                needSpan.className = 'need-value ' + (need > 0 ? 'need-order' : 'need-zero');
+            }
+            // Update grand total
+            let grand = 0;
+            document.querySelectorAll('.need-value').forEach(el => {
+                const t = parseFloat(el.textContent);
+                if (!isNaN(t)) grand += t;
+            });
+            document.getElementById('totalNeeded').textContent = grand.toFixed(2);
+        };
+
+        // ==================== APP LIFECYCLE ====================
+        async function startApp() {
+            // Restore location
+            try {
+                const savedLoc = localStorage.getItem(LOCATION_KEY);
+                if (savedLoc === 'rim' || savedLoc === 'main') {
+                    document.getElementById('locationSelect').value = savedLoc;
+                }
+            } catch(e) {}
+            currentLocation = document.getElementById('locationSelect').value;
+            document.getElementById('locationBadge').textContent = currentLocation === 'rim' ? 'The Rim' : 'Main';
+
+            // Default week
+            currentWeekKey = currentUpcomingTuesday();
+            document.getElementById('weekSelect').value = currentWeekKey;
+
+            await reloadAll();
+            attachRealtimeListeners();
+        }
+
+        async function reloadAll() {
+            itemsData = await loadItemsForLocation(currentLocation);
+            parData = await loadPars(currentLocation);
+            onHandData = await loadOnHand(currentLocation, currentWeekKey);
+            render();
+        }
+
+        function attachRealtimeListeners() {
+            // Listen for on-hand changes for the current week
+            const ref = db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey);
+            ref.on('value', snap => {
+                const data = snap.val() || {};
+                Object.keys(data).forEach(k => {
+                    if (suppressSync[k]) return;
+                    onHandData[k] = data[k];
+                    const input = document.querySelector('input.onhand-input[data-key="' + k + '"]');
+                    if (input && document.activeElement !== input && parseFloat(input.value || 0) !== parseFloat(data[k] || 0)) {
+                        input.value = data[k] || '';
+                        // Recompute need
+                        const par = parseFloat(parData[k]) || 0;
+                        const need = Math.max(0, par - (parseFloat(data[k]) || 0));
+                        const needSpan = document.getElementById('need-' + k);
+                        if (needSpan) {
+                            needSpan.textContent = need > 0 ? need.toFixed(2) : '—';
+                            needSpan.className = 'need-value ' + (need > 0 ? 'need-order' : 'need-zero');
+                        }
+                    }
+                });
+                setSyncStatus(true);
+            }, err => console.error('Listener error:', err));
+
+            db.ref('.info/connected').on('value', s => setSyncStatus(s.val() === true));
+        }
+
+        // ==================== EVENT HANDLERS ====================
+        document.getElementById('locationSelect').addEventListener('change', async () => {
+            const loc = document.getElementById('locationSelect').value;
+            try { localStorage.setItem(LOCATION_KEY, loc); } catch(e) {}
+            // Detach old listener
+            db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey).off();
+            currentLocation = loc;
+            document.getElementById('locationBadge').textContent = loc === 'rim' ? 'The Rim' : 'Main';
+            await reloadAll();
+            attachRealtimeListeners();
+        });
+
+        document.getElementById('weekSelect').addEventListener('change', async () => {
+            db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey).off();
+            currentWeekKey = document.getElementById('weekSelect').value;
+            onHandData = await loadOnHand(currentLocation, currentWeekKey);
+            render();
+            attachRealtimeListeners();
+        });
+
+        document.querySelectorAll('input[name="filter"]').forEach(radio => {
+            radio.addEventListener('change', render);
+        });
+
+        // On page load: check if already logged in
+        const existing = readLogin();
+        if (existing) {
+            firebase.auth().signInAnonymously().then(() => {
+                showApp(existing.pin === ADMIN_PIN ? 'admin' : 'team');
+            }).catch(() => {
+                localStorage.removeItem(LOGIN_KEY);
+            });
+        }
+    </script>
+</body>
+</html>
