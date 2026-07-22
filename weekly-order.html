@@ -138,7 +138,15 @@
             font-weight: 700; cursor: pointer; min-width: 32px;
         }
         .delete-item-btn:hover { background: #c62828; }
-        @media print { .delete-item-btn { display: none !important; } }
+        .restore-item-btn {
+            background: #81c784; color: white; border: none;
+            border-radius: 4px; padding: 6px 10px; font-size: 16px;
+            font-weight: 700; cursor: pointer; min-width: 32px;
+        }
+        .restore-item-btn:hover { background: #388e3c; }
+        @media print { .delete-item-btn, .restore-item-btn { display: none !important; } }
+        tr.hidden-row { background: #fff8f5; opacity: 0.75; }
+        tr.hidden-row .item-name { text-decoration: line-through; color: #999; }
 
         .filter-bar {
             background: white; padding: 12px 16px; border-radius: 8px;
@@ -209,6 +217,7 @@
             <label style="font-weight:400;"><input type="radio" name="filter" value="all" checked> All items</label>
             <label style="font-weight:400;"><input type="radio" name="filter" value="needed"> Only items needing order</label>
             <label style="font-weight:400;"><input type="radio" name="filter" value="hasPar"> Only items with a par set</label>
+            <label id="showHiddenLabel" style="font-weight:400; margin-left:auto; display:none;"><input type="checkbox" id="showHiddenToggle" onchange="toggleShowHidden(this)"> Show hidden items</label>
         </div>
 
         <div id="order-container"></div>
@@ -243,6 +252,8 @@
         let itemsData = {};
         let parData = {};
         let onHandData = {};
+        let hiddenFromWeekly = {};   // itemKey -> true, items hidden from weekly view but kept in monthly inventory
+        let showHiddenItems = false; // admin toggle to view hidden items
         let suppressSync = {};
 
         function readLogin() {
@@ -284,6 +295,9 @@
             const badge = document.getElementById('roleBadge');
             badge.textContent = role === 'admin' ? 'Admin' : 'Team';
             badge.className = 'role-badge ' + role;
+            // Admin sees the "Show hidden items" checkbox
+            const showHiddenLabel = document.getElementById('showHiddenLabel');
+            if (showHiddenLabel) showHiddenLabel.style.display = role === 'admin' ? 'inline-block' : 'none';
             startApp();
         }
 
@@ -347,6 +361,10 @@
             const snap = await db.ref('weekly_orders/' + loc + '/pars').once('value');
             return snap.val() || {};
         }
+        async function loadHidden(loc) {
+            const snap = await db.ref('weekly_orders/' + loc + '/hiddenFromWeekly').once('value');
+            return snap.val() || {};
+        }
         async function loadOnHand(loc, weekKey) {
             const snap = await db.ref('weekly_orders/' + loc + '/' + weekKey).once('value');
             return snap.val() || {};
@@ -376,12 +394,15 @@
                     const unit = parInfo.unit;
                     const onHand = parseFloat(onHandData[key]) || 0;
                     const need = Math.max(0, par - onHand);
-                    return { item, idx, key, par, unit, onHand, need };
+                    const hidden = hiddenFromWeekly[key] === true;
+                    return { item, idx, key, par, unit, onHand, need, hidden };
                 }).filter(x => x);
 
                 let visible = rowsData;
-                if (filter === 'needed') visible = rowsData.filter(r => r.need > 0);
-                if (filter === 'hasPar') visible = rowsData.filter(r => r.par > 0);
+                // Always hide items flagged hiddenFromWeekly unless the admin toggled "show hidden"
+                if (!showHiddenItems) visible = visible.filter(r => !r.hidden);
+                if (filter === 'needed') visible = visible.filter(r => r.need > 0);
+                if (filter === 'hasPar') visible = visible.filter(r => r.par > 0);
                 if (visible.length === 0) return;
 
                 const section = document.createElement('div');
@@ -421,6 +442,7 @@
                 visible.forEach(r => {
                     const tr = document.createElement('tr');
                     tr.setAttribute('data-key', r.key);
+                    if (r.hidden) tr.classList.add('hidden-row');
 
                     const parDisplay = r.par > 0
                         ? `${r.par}${r.unit ? ' <span class="par-unit">' + r.unit + '</span>' : ''}`
@@ -429,9 +451,14 @@
                         ? `<td class="par-cell"><span class="par-value">${parDisplay}</span><button class="edit-par-btn" onclick="editPar('${r.key.replace(/'/g,"\\'")}', '${(r.item.name || '').replace(/'/g,"\\'")}', ${r.par}, '${(r.unit || '').replace(/'/g,"\\'")}')" title="Edit par">✎</button></td>`
                         : `<td class="par-cell"><span class="par-value">${parDisplay}</span></td>`;
 
-                    const deleteCell = currentRole === 'admin'
-                        ? `<td style="text-align:center;"><button class="delete-item-btn" onclick="deleteItem('${sectionName.replace(/'/g,"\\'")}', ${r.idx}, '${(r.item.name || '').replace(/'/g,"\\'")}')" title="Remove this item">X</button></td>`
-                        : '';
+                    let deleteCell = '';
+                    if (currentRole === 'admin') {
+                        if (r.hidden) {
+                            deleteCell = `<td style="text-align:center;"><button class="restore-item-btn" onclick="restoreItem('${r.key.replace(/'/g,"\\'")}', '${(r.item.name || '').replace(/'/g,"\\'")}')" title="Show this item on the weekly order again">↩</button></td>`;
+                        } else {
+                            deleteCell = `<td style="text-align:center;"><button class="delete-item-btn" onclick="hideItem('${r.key.replace(/'/g,"\\'")}', '${(r.item.name || '').replace(/'/g,"\\'")}')" title="Hide from weekly order (item stays in monthly inventory)">X</button></td>`;
+                        }
+                    }
                     tr.innerHTML = `
                         <td class="item-num">${r.item.itemNumber || ''}</td>
                         <td>
@@ -512,27 +539,24 @@
                        .replace(/\[/g, '__LBRACK__').replace(/\]/g, '__RBRACK__');
         }
 
-        window.deleteItem = async function(sectionName, idx, itemName) {
-            if (currentRole !== 'admin') { alert('Only admin can remove items.'); return; }
-            const locLabel = currentLocation === 'rim' ? 'The Rim' : 'Main';
-            if (!confirm('Remove "' + itemName + '" from ' + locLabel + '?\n\nThis removes it from BOTH the Monthly Inventory and the Weekly Order at ' + locLabel + '. Any par level and on-hand counts for this item at ' + locLabel + ' will also be deleted.\n\nMain / other locations are not affected.')) return;
-
-            const arr = Array.isArray(itemsData[sectionName]) ? [...itemsData[sectionName]] : [];
-            if (!arr[idx]) { alert('Item not found — try refreshing the page.'); return; }
-            const removed = arr[idx];
-            const oldKey = getItemKey(sectionName, removed, idx);
-            arr.splice(idx, 1);
-
-            // Save the trimmed section back to Firebase
-            const secKey = escapeSectionKey(sectionName);
-            await db.ref('inventory/' + currentLocation + '/items/' + secKey).set(arr);
-
-            // Also clean up any par level and on-hand data for the removed item
-            await db.ref('weekly_orders/' + currentLocation + '/pars/' + oldKey).remove();
-            await db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey + '/' + oldKey).remove();
-
+        window.hideItem = async function(key, itemName) {
+            if (currentRole !== 'admin') { alert('Only admin can hide items.'); return; }
+            if (!confirm('Hide "' + itemName + '" from the Weekly Order sheet?\n\nThe item STAYS in the Monthly Inventory — this only removes it from this weekly ordering view. Good for vendor-stocked items you don\'t reorder yourself.\n\nYou can bring it back later by toggling "Show hidden items" and tapping the ↩ button.')) return;
+            hiddenFromWeekly[key] = true;
+            await db.ref('weekly_orders/' + currentLocation + '/hiddenFromWeekly/' + key).set(true);
             markSaved();
-            // The items-list listener will trigger re-render automatically
+        };
+
+        window.restoreItem = async function(key, itemName) {
+            if (currentRole !== 'admin') { alert('Only admin can restore items.'); return; }
+            delete hiddenFromWeekly[key];
+            await db.ref('weekly_orders/' + currentLocation + '/hiddenFromWeekly/' + key).remove();
+            markSaved();
+        };
+
+        window.toggleShowHidden = function(checkbox) {
+            showHiddenItems = checkbox.checked;
+            render();
         };
 
         window.onOnHandEdited = function(input) {
@@ -585,6 +609,7 @@
         async function reloadAll() {
             itemsData = await loadItemsForLocation(currentLocation);
             parData = await loadPars(currentLocation);
+            hiddenFromWeekly = await loadHidden(currentLocation);
             onHandData = await loadOnHand(currentLocation, currentWeekKey);
             render();
         }
@@ -602,6 +627,12 @@
             // Listen for PAR changes — re-render when pars update
             db.ref('weekly_orders/' + currentLocation + '/pars').on('value', snap => {
                 parData = snap.val() || {};
+                render();
+            });
+
+            // Listen for HIDDEN-FROM-WEEKLY changes
+            db.ref('weekly_orders/' + currentLocation + '/hiddenFromWeekly').on('value', snap => {
+                hiddenFromWeekly = snap.val() || {};
                 render();
             });
 
@@ -635,6 +666,7 @@
         function detachAllListeners() {
             db.ref('inventory/' + currentLocation + '/items').off();
             db.ref('weekly_orders/' + currentLocation + '/pars').off();
+            db.ref('weekly_orders/' + currentLocation + '/hiddenFromWeekly').off();
             db.ref('weekly_orders/' + currentLocation + '/' + currentWeekKey).off();
         }
 
