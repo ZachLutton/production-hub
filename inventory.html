@@ -821,11 +821,29 @@
             return itemNumber && BEK_ITEM_NUMBERS.has(itemNumber);
         }
 
+        // Discontinued items are HIDDEN from the count sheet but NOT deleted.
+        // Saved counts are keyed by each row's position in its section (s_<section>_<item#>_<index>),
+        // and The Rim's weekly pars/counts use the same positions. Deleting a row would shift every
+        // row below it and detach their saved counts and pars, so we keep the row (hidden) instead.
+        // Past months still include a hidden item's saved count in their totals.
+        // To bring an item back, remove its number from this list.
+        const DISCONTINUED_ITEM_NUMBERS = new Set([
+            '195176', // Glove Vinyl X-large Blue — discontinued by BEK (Sep 2026)
+        ]);
+        function isDiscontinued(itemNumber) {
+            return !!itemNumber && DISCONTINUED_ITEM_NUMBERS.has(String(itemNumber).trim());
+        }
+
         function createItemRow(item, sectionId) {
             const row = document.createElement('tr');
             row.className = 'item-row';
             row.setAttribute('data-price', item.price);
             row.setAttribute('data-section', sectionId);
+            if (isDiscontinued(item.itemNumber)) {
+                // Keep the row in the DOM so positions (and saved-count keys) stay the same
+                row.classList.add('discontinued-row');
+                row.style.display = 'none';
+            }
 
             // Non-BEK items show a static price with a small edit button (pencil).
             // BEK items are always static — they auto-sync from the BEK order guide.
@@ -860,7 +878,7 @@
             headerInfo.className = 'section-header-info';
             headerInfo.innerHTML = `
                 <div class="section-header-title">${sectionName}</div>
-                <div class="section-header-meta" id="meta-${sectionId}">${items.length} items | Total: $0.00</div>
+                <div class="section-header-meta" id="meta-${sectionId}">${items.filter(it => !isDiscontinued(it && it.itemNumber)).length} items | Total: $0.00</div>
             `;
 
             const toggle = document.createElement('div');
@@ -1100,7 +1118,7 @@
                 const sectionId = tbody.id.replace('tbody-', '');
 
                 tbody.querySelectorAll('.item-row').forEach(row => {
-                    itemCount++;
+                    if (!row.classList.contains('discontinued-row')) itemCount++;
                     const price = parseFloat(row.getAttribute('data-price')) || 0;
                     // Use .qty-input specifically — otherwise for non-BEK rows the first
                     // input[type=number] is the editable price, not the quantity.
