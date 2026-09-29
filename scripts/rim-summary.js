@@ -1,4 +1,4 @@
-// Builds The Rim's weekly BEK order list from the on-hand counts vs par levels in Firebase
+// Builds The Rim's weekly low/out list (on-hand counts vs par levels in Firebase) for the BEK order
 // and posts it to Slack (#rim-inventory, via the existing SLACK_WEBHOOK_URL secret).
 // Runs from GitHub Actions early Wednesday morning Central — see .github/workflows/rim-summary.yml.
 //
@@ -82,59 +82,22 @@ function mergeCounts(tuesdayCounts, wednesdayCounts) {
   return { merged, fromWednesday };
 }
 
-// --- Pack / unit handling ---
-// Parses BEK-style pack strings like "2 / 1 GAL", "6 / 800 FT", "1/24CT", "12 / 1 LTR".
-// Returns { count, size, unit } or null if it doesn't look like "N / size UNIT".
-function parsePack(pack) {
-  if (!pack) return null;
-  const m = String(pack).match(/^\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)?\s*([A-Za-z]+)?/);
-  if (!m) return null;
-  return { count: parseFloat(m[1]), size: m[2] ? parseFloat(m[2]) : null, unit: (m[3] || '').toUpperCase() };
+// --- Unit / pack display ---
+// Quantities are shown exactly as counted, in the par's unit. No rounding to cases: Colonnade
+// (the receiving warehouse) often sends partial cases over, so Zach needs the real shortfall.
+function unitLabel(unit) {
+  const u = (unit || '').trim();
+  if (/^(gal|gallon|gallons)$/i.test(u)) return 'gal';
+  return u.toLowerCase();
 }
 
-function isCaseUnit(unit) {
-  return /^(case|cases|cs)$/i.test((unit || '').trim());
-}
-
-function isGallonUnit(unit) {
-  return /^(gal|gallon|gallons)$/i.test((unit || '').trim());
+// "2 / 1 GAL" -> "2/1 GAL" (short reference so he can split a case between locations)
+function packLabel(pack) {
+  return pack ? String(pack).replace(/\s*\/\s*/g, '/').trim() : '';
 }
 
 function fmtNum(n) {
   return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
-}
-
-function plural(n, word) {
-  if (!word) return '';
-  if (n === 1) return word;
-  if (/^case$/i.test(word)) return word + 's';
-  return word;
-}
-
-// Decide what to order for one short item. We never invent a conversion we can't see in the data:
-//  - par counted in cases            -> order ceil(short) cases
-//  - par in a smaller unit than a    -> show the shortfall + the pack and suggest a case count with "?"
-//    multi-unit pack (gal, rolls,       (gallons use the pack's gallon math; otherwise at least 1 case)
-//    boxes of a 10-box case, ...)
-//  - anything else                   -> order ceil(short) of the par unit
-// Returns { text, cases } where cases is the whole number of packs used for the price estimate (or null).
-function orderLine(short, unit, pack) {
-  const p = parsePack(pack);
-  if (isCaseUnit(unit)) {
-    const n = Math.ceil(short - 1e-9);
-    return { text: `order ${n} ${plural(n, 'case')}`, cases: n };
-  }
-  if (p && p.count > 1) {
-    let n;
-    if (isGallonUnit(unit) && p.unit === 'GAL' && p.size) n = Math.ceil(short / (p.count * p.size) - 1e-9);
-    else n = Math.max(1, Math.ceil(short / p.count - 1e-9));
-    const u = unit ? ' ' + unit : '';
-    return { text: `short ${fmtNum(short)}${u} (case = ${pack}) → order ${n} ${plural(n, 'case')}?`, cases: n };
-  }
-  const n = Math.ceil(short - 1e-9);
-  const u = unit ? ' ' + plural(n, unit) : '';
-  const packNote = pack ? ` (pack: ${pack})` : '';
-  return { text: `order ${n}${u}${packNote}`, cases: n };
 }
 
 // --- Order building ---
@@ -149,11 +112,17 @@ function sectionRank(name) {
   return i === -1 ? SECTION_ORDER.length : i;
 }
 
+// BEK items (with an item number) first, then no-BEK items; stable within each (section order).
+function bekFirst(rows) {
+  return rows.filter((r) => r.itemNumber).concat(rows.filter((r) => !r.itemNumber));
+}
+
 // items: raw inventory/rim/items snapshot (section keys may be escaped)
-// Returns { bek: [...], other: [...], uncounted: [...], counted, tracked }
+// Returns { out: [...], low: [...], uncounted: [...], counted, tracked }
+//   out = counted at 0 on hand; low = counted above 0 but below par.
 function buildOrder({ items, pars, hidden, counts }) {
-  const bek = [];
-  const other = [];
+  const out = [];
+  const low = [];
   const uncounted = [];
   let tracked = 0;
   let counted = 0;
@@ -179,29 +148,35 @@ function buildOrder({ items, pars, hidden, counts }) {
       const onHand = parseFloat(counts[key]) || 0;
       const short = Math.max(0, par.value - onHand);
       if (!(short > 0)) return;
-      const line = orderLine(short, par.unit, it.pack);
       const row = {
         section: secName,
         name: it.name || '(unnamed)',
-        brand: it.brand || '',
         itemNumber: it.itemNumber || '',
         pack: it.pack || '',
-        price: parseFloat(it.price) || 0,
         par: par.value,
         unit: par.unit,
         onHand,
         short,
-        order: line.text,
-        cases: line.cases,
       };
-      (row.itemNumber ? bek : other).push(row);
+      (onHand <= 0 ? out : low).push(row);
     });
   });
 
-  return { bek, other, uncounted, counted, tracked };
+  return { out: bekFirst(out), low: bekFirst(low), uncounted, counted, tracked };
 }
 
 // --- Message rendering (Slack mrkdwn) ---
+// One line per item, e.g.
+//   • Degreaser Inside Out Moprite #885818: 0.5 / 1 gal (short 0.5 gal) · pack 2/1 GAL
+//   • Pop Chips - BBQ _(no BEK #)_: 0 / 1 case (short 1 case) · pack 1/30Pk
+function renderItem(r) {
+  const u = unitLabel(r.unit);
+  const us = u ? ' ' + u : '';
+  const id = r.itemNumber ? ` #${r.itemNumber}` : ' _(no BEK #)_';
+  const pack = r.pack ? ` · pack ${packLabel(r.pack)}` : '';
+  return `• ${r.name}${id}: ${fmtNum(r.onHand)} / ${fmtNum(r.par)}${us} (short ${fmtNum(r.short)}${us})${pack}`;
+}
+
 function renderMessage({ weekKey, order, fromWednesday }) {
   const mention = `<@${ZACH_SLACK_ID}>`;
   const tue = shortDate(weekKey);
@@ -222,19 +197,16 @@ function renderMessage({ weekKey, order, fromWednesday }) {
   lines.push(`_${sub}_`);
   lines.push('');
 
-  if (order.bek.length === 0 && order.other.length === 0) {
+  if (order.out.length === 0 && order.low.length === 0) {
     lines.push(':white_check_mark: Nothing below par — no reorder needed this week.');
   } else {
-    lines.push(`*BEK* (${order.bek.length})`);
-    if (order.bek.length === 0) lines.push('• none');
-    order.bek.forEach((r) => lines.push(`• ${r.name} — #${r.itemNumber} — ${r.order}`));
+    lines.push(`*Out (0 on hand)* (${order.out.length})`);
+    if (order.out.length === 0) lines.push('• none');
+    order.out.forEach((r) => lines.push(renderItem(r)));
     lines.push('');
-    lines.push(`*Other vendors / no BEK #* (${order.other.length})`);
-    if (order.other.length === 0) lines.push('• none');
-    order.other.forEach((r) => {
-      const brand = r.brand ? ` (${r.brand})` : '';
-      lines.push(`• ${r.name}${brand} — ${r.order}`);
-    });
+    lines.push(`*Low (below par)* (${order.low.length})`);
+    if (order.low.length === 0) lines.push('• none');
+    order.low.forEach((r) => lines.push(renderItem(r)));
   }
   lines.push('');
 
@@ -243,15 +215,6 @@ function renderMessage({ weekKey, order, fromWednesday }) {
   } else {
     lines.push(`:warning: *Par set but not counted (${order.uncounted.length}):* ` +
       order.uncounted.map((u) => u.name).join(', '));
-  }
-
-  // Rough estimate from the stored item prices (BEK lines only; price assumed per pack).
-  const priced = order.bek.filter((r) => r.price > 0 && r.cases);
-  if (priced.length > 0) {
-    const total = priced.reduce((s, r) => s + r.price * r.cases, 0);
-    const missing = order.bek.length - priced.length;
-    lines.push(`_Rough BEK estimate: ~$${total.toFixed(2)} from stored prices` +
-      (missing > 0 ? `, ${missing} item(s) without a price` : '') + ` — verify in BEK._`);
   }
 
   return lines.join('\n');
@@ -326,8 +289,8 @@ async function main() {
 }
 
 module.exports = {
-  getCountWeek, chicagoDate, addDays, shortDate, mergeCounts, parsePack, orderLine,
-  buildOrder, renderMessage, getItemKey, unescapeSection,
+  getCountWeek, chicagoDate, addDays, shortDate, mergeCounts, unitLabel, packLabel,
+  buildOrder, renderItem, renderMessage, getItemKey, unescapeSection,
 };
 
 if (require.main === module) {

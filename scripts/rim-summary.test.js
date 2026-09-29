@@ -24,13 +24,22 @@ assert.deepStrictEqual(m.merged, { a: 1, b: 5, c: 3 });
 assert.strictEqual(m.fromWednesday, 2);
 assert.deepStrictEqual(s.mergeCounts(null, null), { merged: {}, fromWednesday: 0 });
 
-// --- orderLine rounding ---
-assert.strictEqual(s.orderLine(0.5, 'case', '24 / 250 CT').text, 'order 1 case');
-assert.strictEqual(s.orderLine(1.5, 'case', '1 / 50 CT').text, 'order 2 cases');
-assert.strictEqual(s.orderLine(0.5, 'gallon', '2 / 1 GAL').text, 'short 0.5 gallon (case = 2 / 1 GAL) → order 1 case?');
-assert.strictEqual(s.orderLine(3, 'gallon', '2 / 1 GAL').text, 'short 3 gallon (case = 2 / 1 GAL) → order 2 cases?');
-assert.strictEqual(s.orderLine(1, 'Rolls', '6 / 800 FT').text, 'short 1 Rolls (case = 6 / 800 FT) → order 1 case?');
-assert.strictEqual(s.orderLine(2, 'boxes', '1/EA').text, 'order 2 boxes (pack: 1/EA)');
+// --- unit / pack labels and item lines (no case rounding) ---
+assert.strictEqual(s.unitLabel('gallon'), 'gal');
+assert.strictEqual(s.unitLabel('Rolls'), 'rolls');
+assert.strictEqual(s.packLabel('2 / 1 GAL'), '2/1 GAL');
+assert.strictEqual(
+  s.renderItem({ name: 'Degreaser Moprite', itemNumber: '885818', pack: '2 / 1 GAL', par: 1, unit: 'gallon', onHand: 0.5, short: 0.5 }),
+  '• Degreaser Moprite #885818: 0.5 / 1 gal (short 0.5 gal) · pack 2/1 GAL'
+);
+assert.strictEqual(
+  s.renderItem({ name: 'Liner Trash 60 Gal', itemNumber: '197236', pack: '1 / 100 CT', par: 1, unit: 'case', onHand: 0.25, short: 0.75 }),
+  '• Liner Trash 60 Gal #197236: 0.25 / 1 case (short 0.75 case) · pack 1/100 CT'
+);
+assert.strictEqual(
+  s.renderItem({ name: 'Pop Chips - BBQ', itemNumber: '', pack: '1/30Pk', par: 1, unit: 'case', onHand: 0, short: 1 }),
+  '• Pop Chips - BBQ _(no BEK #)_: 0 / 1 case (short 1 case) · pack 1/30Pk'
+);
 
 // --- buildOrder / renderMessage on a small synthetic fixture ---
 const items = {
@@ -43,6 +52,7 @@ const items = {
     { name: 'Hidden Jerky', pack: '1/EA' },
     { name: 'No Par Nuts', pack: '1/EA' },
     { name: 'Smartwater', itemNumber: '116379', pack: '12 / 1 LTR', price: 33.87 },
+    { name: 'Towel Roll', itemNumber: '881026', pack: '6 / 800 FT', price: 91.95 },
   ],
 };
 const k = (sec, i) => s.getItemKey(sec, items[sec.replace('/', '__SLASH__')][i], i);
@@ -53,20 +63,24 @@ const pars = {
   [k(FH, 0)]: { value: 1, unit: 'case' },
   [k(FH, 1)]: { value: 5, unit: 'case' },
   [k(FH, 3)]: { value: 1, unit: 'case' },
+  [k(FH, 4)]: { value: 3, unit: 'Rolls' },
 };
 const hidden = { [k(FH, 1)]: true };
-const tue = { [k(CH, 0)]: 0.5, [k(CH, 1)]: 1, [k(FH, 0)]: 0 };
+const tue = { [k(CH, 0)]: 0.5, [k(CH, 1)]: 1, [k(FH, 0)]: 0, [k(FH, 4)]: 0 };
 
 const order = s.buildOrder({ items, pars, hidden, counts: tue });
-assert.deepStrictEqual(order.bek.map((r) => r.name), ['Degreaser']);
-assert.deepStrictEqual(order.other.map((r) => r.name), ['Pop Chips - BBQ']);
+// Out = 0 on hand (BEK first, then no-BEK); Low = above 0 but below par
+assert.deepStrictEqual(order.out.map((r) => r.name), ['Towel Roll', 'Pop Chips - BBQ']);
+assert.deepStrictEqual(order.low.map((r) => r.name), ['Degreaser']);
 assert.deepStrictEqual(order.uncounted.map((r) => r.name), ['Smartwater']);
-assert.strictEqual(order.tracked, 4);
-assert.strictEqual(order.counted, 3);
+assert.strictEqual(order.tracked, 5);
+assert.strictEqual(order.counted, 4);
 const msg = s.renderMessage({ weekKey: '2026-09-29', order, fromWednesday: 0 });
 assert.ok(msg.startsWith('<@U02KLAS8S> *Rim BEK order — counts from Tue 9/29*'));
-assert.ok(msg.includes('• Degreaser — #885818 — short 0.5 gallon (case = 2 / 1 GAL) → order 1 case?'));
-assert.ok(msg.includes('• Pop Chips - BBQ (Pop Chip) — order 1 case'));
+assert.ok(msg.includes('*Out (0 on hand)* (2)\n• Towel Roll #881026: 0 / 3 rolls (short 3 rolls) · pack 6/800 FT\n• Pop Chips - BBQ _(no BEK #)_: 0 / 1 case (short 1 case) · pack 1/30Pk'));
+assert.ok(msg.includes('*Low (below par)* (1)\n• Degreaser #885818: 0.5 / 1 gal (short 0.5 gal) · pack 2/1 GAL'));
+assert.ok(msg.indexOf('*Out (0 on hand)*') < msg.indexOf('*Low (below par)*'));
+assert.ok(!/\$|order 1 case\?|estimate/.test(msg), 'no prices, no case rounding');
 assert.ok(msg.includes('Par set but not counted (1):* Smartwater'));
 
 // Late entry saved under Wednesday fills the gap
@@ -76,12 +90,12 @@ assert.strictEqual(order2.uncounted.length, 0);
 const msg2 = s.renderMessage({ weekKey: '2026-09-29', order: order2, fromWednesday: withWed.fromWednesday });
 assert.ok(msg2.includes('All items counted'));
 assert.ok(msg2.includes('includes 1 saved under Wed 9/30'));
-assert.ok(msg2.includes('• Smartwater — #116379 — order 1 case'));
+assert.ok(msg2.includes('• Smartwater #116379: 0 / 1 case (short 1 case) · pack 12/1 LTR'));
 
 // No counts at all -> clear "no counts found", never a full-par list
 const empty = s.buildOrder({ items, pars, hidden, counts: {} });
 const msg3 = s.renderMessage({ weekKey: '2026-09-29', order: empty, fromWednesday: 0 });
 assert.ok(msg3.includes('no counts found for week of Tue 9/29'));
-assert.ok(!msg3.includes('Degreaser') && !msg3.includes('order 1'));
+assert.ok(!msg3.includes('Degreaser') && !msg3.includes('short'));
 
 console.log('All rim-summary tests passed.');
