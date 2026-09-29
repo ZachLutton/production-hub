@@ -1,21 +1,17 @@
-// Fetches The Rim's weekly on-hand counts vs par levels from Firebase and posts a
-// scannable order summary to Slack #rim-monthly-inventory.
-// Runs from GitHub Actions on Tuesday 9pm CDT — see .github/workflows/rim-summary.yml.
+// Builds The Rim's weekly low/out list (on-hand counts vs par levels in Firebase) for the BEK order
+// and posts it to Slack (#rim-inventory, via the existing SLACK_WEBHOOK_URL secret).
+// Runs from GitHub Actions early Wednesday morning Central — see .github/workflows/rim-summary.yml.
+//
+// The pure helpers (date math, order building, message rendering) are exported so they can be
+// tested locally without Firebase or Slack: see scripts/rim-summary.test.js.
 
-const admin = require('firebase-admin');
 const https = require('https');
 const { URL } = require('url');
 
-// --- Firebase init ---
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: 'https://zedrics-production-hub-default-rtdb.firebaseio.com',
-});
-const db = admin.database();
+const ZACH_SLACK_ID = 'U02KLAS8S';
+const TZ = 'America/Chicago';
 
-// --- Helpers ---
-// Same key format the weekly-order.html page uses
+// --- Key helpers (same key format the weekly-order.html page uses) ---
 function unescapeSection(k) {
   return k
     .replace(/__SLASH__/g, '/')
@@ -41,16 +37,187 @@ function getParInfo(pars, key) {
   return { value: parseFloat(raw) || 0, unit: '' };
 }
 
-// Get the current upcoming Tuesday's date in YYYY-MM-DD (matches what the app writes)
-function getUpcomingTuesday() {
-  const d = new Date();
-  const day = d.getDay(); // 0=Sun, 2=Tue
-  let diff;
-  if (day < 2) diff = 2 - day;
-  else if (day === 2) diff = 0;
-  else diff = 2 - day + 7;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+// --- Date helpers ---
+// Returns { ymd: 'YYYY-MM-DD', dow: 0-6 } for the given instant, in America/Chicago time.
+function chicagoDate(now) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+  }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t).value;
+  const dow = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(get('weekday'));
+  return { ymd: `${get('year')}-${get('month')}-${get('day')}`, dow };
+}
+
+// Adds whole days to a 'YYYY-MM-DD' string (calendar math only, no time zones involved).
+function addDays(ymd, days) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return dt.toISOString().slice(0, 10);
+}
+
+// The count week is keyed by its Tuesday. Use the most recent Tuesday in Chicago time
+// (today if it is Tuesday). Running Wednesday morning therefore reads yesterday's counts.
+function getCountWeek(now = new Date()) {
+  const { ymd, dow } = chicagoDate(now);
+  const back = (dow - 2 + 7) % 7; // days since Tuesday
+  return addDays(ymd, -back);
+}
+
+// 'YYYY-MM-DD' -> 'M/D'
+function shortDate(ymd) {
+  const [, m, d] = ymd.split('-').map(Number);
+  return `${m}/${d}`;
+}
+
+// --- Counts ---
+// Workaround for a known page bug: weekly-order.html builds its date key with toISOString() (UTC),
+// so counts typed in after ~7pm CDT (6pm CST) on Tuesday get saved under WEDNESDAY's date key.
+// So we read both the Tuesday and the Wednesday keys and merge them. If an item exists under
+// both, the Wednesday value wins because it was entered later.
+function mergeCounts(tuesdayCounts, wednesdayCounts) {
+  const tue = tuesdayCounts || {};
+  const wed = wednesdayCounts || {};
+  const merged = { ...tue, ...wed };
+  const fromWednesday = Object.keys(wed).length;
+  return { merged, fromWednesday };
+}
+
+// --- Unit / pack display ---
+// Quantities are shown exactly as counted, in the par's unit. No rounding to cases: Colonnade
+// (the receiving warehouse) often sends partial cases over, so Zach needs the real shortfall.
+function unitLabel(unit) {
+  const u = (unit || '').trim();
+  if (/^(gal|gallon|gallons)$/i.test(u)) return 'gal';
+  return u.toLowerCase();
+}
+
+// "2 / 1 GAL" -> "2/1 GAL" (short reference so he can split a case between locations)
+function packLabel(pack) {
+  return pack ? String(pack).replace(/\s*\/\s*/g, '/').trim() : '';
+}
+
+function fmtNum(n) {
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+}
+
+// --- Order building ---
+const SECTION_ORDER = [
+  'Walk-in Cooler', 'Produce', 'Meat', 'Label Printing Table', 'Saute Line', 'Spice Rack',
+  'Kitchen Dry Supplies', 'Chemicals/Janitorial Supplies', 'Plating Team Supplies',
+  'Front of House Supplies', 'Bathroom Supplies', 'Freezer', 'Labeling Station',
+];
+
+function sectionRank(name) {
+  const i = SECTION_ORDER.indexOf(name);
+  return i === -1 ? SECTION_ORDER.length : i;
+}
+
+// BEK items (with an item number) first, then no-BEK items; stable within each (section order).
+function bekFirst(rows) {
+  return rows.filter((r) => r.itemNumber).concat(rows.filter((r) => !r.itemNumber));
+}
+
+// items: raw inventory/rim/items snapshot (section keys may be escaped)
+// Returns { out: [...], low: [...], uncounted: [...], counted, tracked }
+//   out = counted at 0 on hand; low = counted above 0 but below par.
+function buildOrder({ items, pars, hidden, counts }) {
+  const out = [];
+  const low = [];
+  const uncounted = [];
+  let tracked = 0;
+  let counted = 0;
+
+  const sections = Object.entries(items || {})
+    .filter(([, arr]) => Array.isArray(arr))
+    .map(([sec, arr]) => [unescapeSection(sec), arr])
+    .sort((a, b) => sectionRank(a[0]) - sectionRank(b[0]));
+
+  sections.forEach(([secName, arr]) => {
+    arr.forEach((it, idx) => {
+      if (!it) return;
+      const key = getItemKey(secName, it, idx);
+      if (hidden && hidden[key]) return;
+      const par = getParInfo(pars || {}, key);
+      if (!(par.value > 0)) return; // only items with a par set are part of the weekly order
+      tracked++;
+      if (!Object.prototype.hasOwnProperty.call(counts, key)) {
+        uncounted.push({ section: secName, name: it.name || '(unnamed)' });
+        return;
+      }
+      counted++;
+      const onHand = parseFloat(counts[key]) || 0;
+      const short = Math.max(0, par.value - onHand);
+      if (!(short > 0)) return;
+      const row = {
+        section: secName,
+        name: it.name || '(unnamed)',
+        itemNumber: it.itemNumber || '',
+        pack: it.pack || '',
+        par: par.value,
+        unit: par.unit,
+        onHand,
+        short,
+      };
+      (onHand <= 0 ? out : low).push(row);
+    });
+  });
+
+  return { out: bekFirst(out), low: bekFirst(low), uncounted, counted, tracked };
+}
+
+// --- Message rendering (Slack mrkdwn) ---
+// One line per item, e.g.
+//   • Degreaser Inside Out Moprite #885818: 0.5 / 1 gal (short 0.5 gal) · pack 2/1 GAL
+//   • Pop Chips - BBQ _(no BEK #)_: 0 / 1 case (short 1 case) · pack 1/30Pk
+function renderItem(r) {
+  const u = unitLabel(r.unit);
+  const us = u ? ' ' + u : '';
+  const id = r.itemNumber ? ` #${r.itemNumber}` : ' _(no BEK #)_';
+  const pack = r.pack ? ` · pack ${packLabel(r.pack)}` : '';
+  return `• ${r.name}${id}: ${fmtNum(r.onHand)} / ${fmtNum(r.par)}${us} (short ${fmtNum(r.short)}${us})${pack}`;
+}
+
+function renderMessage({ weekKey, order, fromWednesday }) {
+  const mention = `<@${ZACH_SLACK_ID}>`;
+  const tue = shortDate(weekKey);
+  const wed = shortDate(addDays(weekKey, 1));
+
+  if (order.counted === 0) {
+    return (
+      `${mention} :warning: *Rim BEK order — no counts found for week of Tue ${tue}* (${weekKey}).\n` +
+      `Nothing was entered in the weekly order tool for Tue ${tue} (or Wed ${wed}), so no order list was built. ` +
+      `Check the tool or get a count before ordering.`
+    );
+  }
+
+  const lines = [];
+  lines.push(`${mention} *Rim BEK order — counts from Tue ${tue}*`);
+  let sub = `${order.counted} of ${order.tracked} par items counted`;
+  if (fromWednesday > 0) sub += ` (includes ${fromWednesday} saved under Wed ${wed} — late-evening entries)`;
+  lines.push(`_${sub}_`);
+  lines.push('');
+
+  if (order.out.length === 0 && order.low.length === 0) {
+    lines.push(':white_check_mark: Nothing below par — no reorder needed this week.');
+  } else {
+    lines.push(`*Out (0 on hand)* (${order.out.length})`);
+    if (order.out.length === 0) lines.push('• none');
+    order.out.forEach((r) => lines.push(renderItem(r)));
+    lines.push('');
+    lines.push(`*Low (below par)* (${order.low.length})`);
+    if (order.low.length === 0) lines.push('• none');
+    order.low.forEach((r) => lines.push(renderItem(r)));
+  }
+  lines.push('');
+
+  if (order.uncounted.length === 0) {
+    lines.push(':white_check_mark: All items counted');
+  } else {
+    lines.push(`:warning: *Par set but not counted (${order.uncounted.length}):* ` +
+      order.uncounted.map((u) => u.name).join(', '));
+  }
+
+  return lines.join('\n');
 }
 
 // --- Slack post helper ---
@@ -84,117 +251,63 @@ function postToSlack(webhookUrl, text) {
   });
 }
 
-// --- Section render order (matches the app) ---
-const SECTION_ORDER = [
-  'Walk-in Cooler',
-  'Produce',
-  'Meat',
-  'Label Printing Table',
-  'Saute Line',
-  'Spice Rack',
-  'Kitchen Dry Supplies',
-  'Chemicals/Janitorial Supplies',
-  'Plating Team Supplies',
-  'Front of House Supplies',
-  'Bathroom Supplies',
-  'Freezer',
-  'Labeling Station',
-];
-
 // --- Main ---
 async function main() {
-  const weekKey = getUpcomingTuesday();
-  console.log('Building summary for week:', weekKey);
+  // Loaded here (not at the top) so the helpers above can be tested without firebase-admin installed.
+  const admin = require('firebase-admin');
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: 'https://zedrics-production-hub-default-rtdb.firebaseio.com',
+  });
+  const db = admin.database();
 
-  const [itemsSnap, parsSnap, hiddenSnap, onHandSnap] = await Promise.all([
+  const weekKey = getCountWeek(new Date());
+  const wedKey = addDays(weekKey, 1);
+  console.log('Building summary for count week:', weekKey, '(also checking', wedKey + ')');
+
+  const [itemsSnap, parsSnap, hiddenSnap, tueSnap, wedSnap] = await Promise.all([
     db.ref('inventory/rim/items').once('value'),
     db.ref('weekly_orders/rim/pars').once('value'),
     db.ref('weekly_orders/rim/hiddenFromWeekly').once('value'),
     db.ref('weekly_orders/rim/' + weekKey).once('value'),
+    db.ref('weekly_orders/rim/' + wedKey).once('value'),
   ]);
-  const items = itemsSnap.val() || {};
-  const pars = parsSnap.val() || {};
-  const hidden = hiddenSnap.val() || {};
-  const onHand = onHandSnap.val() || {};
 
-  const entryCount = Object.keys(onHand).length;
-
-  // Group needs by section
-  const needsBySection = {};
-  Object.entries(items).forEach(([sec, arr]) => {
-    if (!Array.isArray(arr)) return;
-    const secName = unescapeSection(sec);
-    arr.forEach((it, idx) => {
-      if (!it) return;
-      const key = getItemKey(secName, it, idx);
-      if (hidden[key]) return;
-      const parInfo = getParInfo(pars, key);
-      const oh = parseFloat(onHand[key]) || 0;
-      const need = Math.max(0, parInfo.value - oh);
-      if (need > 0) {
-        if (!needsBySection[secName]) needsBySection[secName] = [];
-        needsBySection[secName].push({
-          name: it.name || '(unnamed)',
-          brand: it.brand || '',
-          need,
-          unit: parInfo.unit,
-        });
-      }
-    });
+  const { merged, fromWednesday } = mergeCounts(tueSnap.val(), wedSnap.val());
+  const order = buildOrder({
+    items: itemsSnap.val() || {},
+    pars: parsSnap.val() || {},
+    hidden: hiddenSnap.val() || {},
+    counts: merged,
   });
-
-  const needCount = Object.values(needsBySection).reduce((s, arr) => s + arr.length, 0);
-
-  // Compose message
-  let msg;
-  if (entryCount === 0) {
-    msg = `:warning: *Rim Order — ${weekKey}* — Team hasn't submitted counts! Posting baseline assuming shelves are empty:\n\n`;
-    msg += renderNeeds(needsBySection);
-  } else if (needCount === 0) {
-    msg = `:white_check_mark: *Rim Order — ${weekKey}* — Nothing below par (${entryCount} items counted). No reorder needed this week.`;
-  } else {
-    msg = `:package: *Rim Order — ${weekKey}* — ${entryCount} items counted. Order this before Wednesday 6am:\n\n`;
-    msg += renderNeeds(needsBySection);
-  }
+  const msg = renderMessage({ weekKey, order, fromWednesday });
 
   console.log('--- Message ---\n' + msg + '\n---------------');
-
   await postToSlack(process.env.SLACK_WEBHOOK_URL, msg);
   console.log('Posted to Slack successfully.');
 }
 
-function renderNeeds(needsBySection) {
-  // Render in SECTION_ORDER first, then any unknown sections after
-  const orderedNames = SECTION_ORDER.filter((n) => needsBySection[n]);
-  Object.keys(needsBySection).forEach((n) => {
-    if (!orderedNames.includes(n)) orderedNames.push(n);
-  });
-  let out = '';
-  orderedNames.forEach((sec) => {
-    out += `*${sec}:*\n`;
-    needsBySection[sec].forEach((x) => {
-      const unitStr = x.unit ? ' ' + x.unit : '';
-      const brandStr = x.brand ? ' (' + x.brand + ')' : '';
-      out += `• ${x.need}${unitStr} — ${x.name}${brandStr}\n`;
-    });
-    out += '\n';
-  });
-  return out;
-}
+module.exports = {
+  getCountWeek, chicagoDate, addDays, shortDate, mergeCounts, unitLabel, packLabel,
+  buildOrder, renderItem, renderMessage, getItemKey, unescapeSection,
+};
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error('Failed:', err);
-    // Try to post the failure to Slack so it's not silent
-    if (process.env.SLACK_WEBHOOK_URL) {
-      postToSlack(
-        process.env.SLACK_WEBHOOK_URL,
-        `:x: *Rim Order Summary failed:* ${err.message}\nCheck GitHub Actions logs for details.`
-      )
-        .catch(() => {})
-        .finally(() => process.exit(1));
-    } else {
-      process.exit(1);
-    }
-  });
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error('Failed:', err);
+      // Try to post the failure to Slack so it's not silent
+      if (process.env.SLACK_WEBHOOK_URL) {
+        postToSlack(
+          process.env.SLACK_WEBHOOK_URL,
+          `<@${ZACH_SLACK_ID}> :x: *Rim Order Summary failed:* ${err.message}\nCheck GitHub Actions logs for details.`
+        )
+          .catch(() => {})
+          .finally(() => process.exit(1));
+      } else {
+        process.exit(1);
+      }
+    });
+}

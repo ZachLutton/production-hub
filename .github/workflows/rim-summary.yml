@@ -1,10 +1,15 @@
 name: Rim Weekly Order Summary
 
-# Tuesday 9pm Central. Cron is in UTC — 02:00 UTC on Wednesday = 9pm CDT Tuesday (summer).
-# If DST ends (November), bump to '0 3 * * 3' for 9pm CST Tuesday.
+# Wednesday early morning Central, so the BEK order list is waiting before the 6am order.
+# Cron is in UTC and GitHub often starts scheduled runs late (we've seen 30-60+ min),
+# so this is set for 4:30am CDT to land by ~5:00am.
+#   09:30 UTC Wednesday = 4:30am CDT (summer time).
+# After DST ends on Nov 1, change this to '30 10 * * 3' (10:30 UTC = 4:30am CST).
+# The script reads the most recent Tuesday's counts in America/Chicago time, so the
+# UTC run time does not affect which week it reads.
 on:
   schedule:
-    - cron: '0 2 * * 3'
+    - cron: '30 9 * * 3'
   workflow_dispatch:  # allows manual "Run workflow" from the Actions tab
 
 jobs:
