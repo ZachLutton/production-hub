@@ -546,7 +546,11 @@
                 { itemNumber: '550312', name: 'Chicken Breast Random Blsl', brand: 'Wayne Farms', pack: '4 / 10 LB', price: 72.16 },
                 { itemNumber: '122844', name: 'Beef Brisket Bnls 120 Prime', brand: '1855', pack: '4 / 1 pc', price: 6.53 },
                 { itemNumber: '162516', name: 'Beef Top Butt Sirloin Bnls', brand: 'Palo Duro Meats', pack: '5 / 10-14 LB', price: 6.34 },
-                { itemNumber: '487529', name: 'Chicken Thigh Diced Raw', brand: 'Tyson', pack: '4 / 5 LB', price: 58.56 }
+                { itemNumber: '487529', name: 'Chicken Thigh Diced Raw', brand: 'Tyson', pack: '4 / 5 LB', price: 58.56 },
+                { itemNumber: '121792', name: 'Chicken Thigh Blsl Raw', brand: 'Koch Foods', pack: '4 / 10 LB', price: 92.60 },
+                { itemNumber: '500370', name: 'Beef Brisket 1 Piece', brand: 'Supreme', pack: '1 / 9-11 LB', price: 8.50 },
+                { itemNumber: '220607', name: 'Beef Sirloin Tips 1 In Diced', brand: 'Laxson', pack: '2 / 5 LB', price: 15.54 },
+                { itemNumber: '189197', name: 'Chicken Breast Shredded', brand: 'Garcia Foods', pack: '5 / 2 LB', price: 61.98 }
             ],
             'Label Printing Table': [
                 { itemNumber: '121690', name: 'Baking Cup White 4.5 In', brand: 'Regency Wraps', pack: '20 / 500 CT', price: 11.21 },
@@ -663,7 +667,8 @@
                 { itemNumber: '556260', name: 'Glove Vinyl Med PF Blue', brand: 'Safety Zone', pack: '10 / 100 ct', price: 35.98 },
                 { itemNumber: '883716', name: 'Glove Vinyl Small Powder Free', brand: 'Handgards', pack: '10 / 100 CT', price: 40.40 },
                 { itemNumber: '129707', name: 'Bag Reclosable 1 Gal 10.5x10.5', brand: 'Essentials', pack: '1 / 250 CT', price: 17.77 },
-                { itemNumber: '187911', name: 'Cup Plas Souffle 4 Oz Blk', brand: 'Crystalware', pack: '25 / 100 CT', price: 48.36 }
+                { itemNumber: '187911', name: 'Cup Plas Souffle 4 Oz Blk', brand: 'Crystalware', pack: '25 / 100 CT', price: 48.36 },
+                { itemNumber: '161647', name: 'Glove Vinyl Xl Black Pf', brand: 'Handgards', pack: '10 / 100 CT', price: 35.98 }
             ],
             'Front of House Supplies': [
                 { itemNumber: '116379', name: 'Water Smartwater', brand: 'Glaceau', pack: '12 / 1 LTR', price: 33.87 },
@@ -1435,6 +1440,39 @@
             return ordered;
         }
 
+        // New items for existing locations. The saved item list per location only gets PRICE updates
+        // from INVENTORY_DATA, so new products must be appended explicitly. Each item is appended to the
+        // END of its section (existing rows keep their positions, so saved counts and Rim weekly pars
+        // don't shift), and only if that item # isn't already anywhere in the location's list, so this
+        // is safe to run on every load. Remove entries once they're live everywhere.
+        const LOCATION_ADDITIONS = {
+            main: {
+                'Meat': ['121792', '500370', '220607', '189197'],   // Sep 2026 replacements
+            },
+            rim: {
+                'Plating Team Supplies': ['161647'],                // replaces discontinued blue XL glove 195176
+            },
+        };
+        function applyLocationAdditions(loc, data) {
+            const adds = LOCATION_ADDITIONS[loc];
+            if (!adds) return false;
+            const present = new Set();
+            Object.values(data).forEach(arr => (arr || []).forEach(it => { if (it && it.itemNumber) present.add(String(it.itemNumber).trim()); }));
+            const byNumber = {};
+            Object.values(INVENTORY_DATA).forEach(arr => arr.forEach(it => { if (it.itemNumber) byNumber[it.itemNumber] = it; }));
+            let changed = false;
+            Object.keys(adds).forEach(sec => {
+                if (!Array.isArray(data[sec])) { console.warn('[Inventory] Section missing at', loc, ':', sec); return; }
+                adds[sec].forEach(num => {
+                    if (present.has(num) || !byNumber[num]) return;
+                    data[sec].push(JSON.parse(JSON.stringify(byNumber[num])));
+                    present.add(num);
+                    changed = true;
+                });
+            });
+            return changed;
+        }
+
         async function loadItemsForLocation(loc) {
             const snap = await locationItemsRef(loc).once('value');
             let raw = snap.val();
@@ -1444,10 +1482,12 @@
                 return JSON.parse(JSON.stringify(INVENTORY_DATA));
             }
             let data = reorderSectionsByConstant(unescapeItemsFromFirebase(raw));
-            // Sync any updated prices from the latest INVENTORY_DATA
-            if (syncPricesFromConstant(data)) {
+            // Sync any updated prices from the latest INVENTORY_DATA, and append any new items
+            const pricesChanged = syncPricesFromConstant(data);
+            const itemsAdded = applyLocationAdditions(loc, data);
+            if (pricesChanged || itemsAdded) {
                 await locationItemsRef(loc).set(escapeItemsForFirebase(data));
-                console.log('[Inventory] Synced updated prices to', loc);
+                console.log('[Inventory] Saved items list for', loc, { pricesChanged, itemsAdded });
             }
             return data;
         }
