@@ -709,12 +709,10 @@
                 { itemNumber: '', name: 'Juice - Phoenix', brand: 'Stoke', pack: '1/EA', price: 7.25 },
                 { itemNumber: '', name: 'Juice - Hulk', brand: 'Stoke', pack: '1/EA', price: 7.25 },
                 { itemNumber: '', name: 'Ready Protein Bar - Variety Pack', brand: 'Ready', pack: '1/20pk', price: 16.98 },
-                { itemNumber: '', name: 'Pop Chips - Sour Cream and Onion', brand: 'Pop Chip', pack: '1/30Pk', price: 14.98 },
-                { itemNumber: '', name: 'Pop Chips - Salt and Vinegar', brand: 'Pop Chip', pack: '1/30PK', price: 14.98 },
-                { itemNumber: '', name: 'Pop Chips - BBQ', brand: 'Pop Chip', pack: '1/30Pk', price: 14.98 },
+                { itemNumber: '', name: 'Pop Chips - Sour Cream and Onion', brand: 'Pop Chip', pack: '24 / 0.8 OZ', price: 20.67 },
+                { itemNumber: '', name: 'Pop Chips - Salt and Vinegar', brand: 'Pop Chip', pack: '24 / 0.8 OZ', price: 20.67 },
+                { itemNumber: '', name: 'Pop Chips - BBQ', brand: 'Pop Chip', pack: '24 / 0.8 OZ', price: 20.67 },
                 { itemNumber: '', name: 'Built Puff Bar', brand: 'Built', pack: '1/EA', price: 1.74 },
-                { itemNumber: '155330', name: 'Popchips 0.8 Oz', brand: 'Popchips', pack: '24 / 0.8 OZ', price: 20.67 },
-                { itemNumber: '210523', name: 'Popchips 0.8 Oz', brand: 'Popchips', pack: '24 / 0.8 OZ', price: 20.67 },
                 { itemNumber: '563091', name: 'Kombucha 12 Oz', brand: '', pack: '6 / 12 OZ', price: 13.31 },
                 { itemNumber: '563081', name: 'Kombucha 12 Oz', brand: '', pack: '6 / 12 OZ', price: 13.31 },
                 { itemNumber: '563278', name: 'Kombucha 12 Oz', brand: '', pack: '6 / 12 OZ', price: 13.31 }
@@ -1461,11 +1459,11 @@
                 'Meat': ['121792', '500370', '220607', '189197'],   // Sep 2026 replacements
                 'Freezer': ['219408', '172359', '206425'],          // BEK special orders; salmon/hashbrown replace 139366/185467
                 'Kitchen Dry Supplies': ['212500'],                 // peanut butter
-                'Front of House Supplies': ['155330', '210523', '563091', '563081', '563278'], // popchips x2, kombucha x3
+                'Front of House Supplies': ['563091', '563081', '563278'], // kombucha x3
             },
             rim: {
                 'Plating Team Supplies': ['161647'],                // replaces discontinued blue XL glove 195176
-                'Front of House Supplies': ['155330', '210523'],    // popchips (Rim already stocks pop chips)
+                'Front of House Supplies': ['563091', '563081', '563278'], // kombucha x3
             },
         };
         function applyLocationAdditions(loc, data) {
@@ -1488,6 +1486,33 @@
             return changed;
         }
 
+        // One-time in-place updates for saved rows that have NO item number (price sync by number can't
+        // reach them). Matches exact section + exact name + empty item #, and only while the row still has
+        // the OLD pack, so it runs once and never overrides a later pencil edit. Nothing is moved, and the
+        // row's name/item # (which make up its saved-count key) are untouched. Applies to every location.
+        const NAMED_ITEM_UPDATES = [
+            // Sep 2026: pop chips now BEK 24 / 0.8 OZ at $20.67 (was 1/30 PK at $14.98)
+            { section: 'Front of House Supplies', name: 'Pop Chips - Sour Cream and Onion', fromPack: '1/30pk', pack: '24 / 0.8 OZ', price: 20.67 },
+            { section: 'Front of House Supplies', name: 'Pop Chips - Salt and Vinegar',     fromPack: '1/30pk', pack: '24 / 0.8 OZ', price: 20.67 },
+            { section: 'Front of House Supplies', name: 'Pop Chips - BBQ',                  fromPack: '1/30pk', pack: '24 / 0.8 OZ', price: 20.67 },
+        ];
+        function applyNamedItemUpdates(data) {
+            let changed = false;
+            NAMED_ITEM_UPDATES.forEach(u => {
+                const arr = data[u.section];
+                if (!Array.isArray(arr)) return;
+                arr.forEach(it => {
+                    if (!it || (it.itemNumber && String(it.itemNumber).trim())) return;
+                    if (String(it.name || '').trim() !== u.name) return;
+                    if (String(it.pack || '').replace(/\s+/g, '').toLowerCase() !== u.fromPack) return;
+                    it.pack = u.pack;
+                    it.price = u.price;
+                    changed = true;
+                });
+            });
+            return changed;
+        }
+
         async function loadItemsForLocation(loc) {
             const snap = await locationItemsRef(loc).once('value');
             let raw = snap.val();
@@ -1500,9 +1525,10 @@
             // Sync any updated prices from the latest INVENTORY_DATA, and append any new items
             const pricesChanged = syncPricesFromConstant(data);
             const itemsAdded = applyLocationAdditions(loc, data);
-            if (pricesChanged || itemsAdded) {
+            const namedUpdated = applyNamedItemUpdates(data);
+            if (pricesChanged || itemsAdded || namedUpdated) {
                 await locationItemsRef(loc).set(escapeItemsForFirebase(data));
-                console.log('[Inventory] Saved items list for', loc, { pricesChanged, itemsAdded });
+                console.log('[Inventory] Saved items list for', loc, { pricesChanged, itemsAdded, namedUpdated });
             }
             return data;
         }
