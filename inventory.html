@@ -829,6 +829,14 @@
         // To bring an item back, remove its number from this list.
         const DISCONTINUED_ITEM_NUMBERS = new Set([
             '195176', // Glove Vinyl X-large Blue — discontinued by BEK (Sep 2026)
+            '111399', // Chicken Thigh Bnls Chicharron — no longer used (Sep 2026)
+            '512161', // Beef Tip Tenderloin — no longer used (Sep 2026)
+            '550312', // Chicken Breast Random Blsl — no longer used (Sep 2026)
+            '122844', // Beef Brisket Bnls 120 Prime — no longer used (Sep 2026)
+            '162516', // Beef Top Butt Sirloin Bnls — no longer used (Sep 2026)
+            '487529', // Chicken Thigh Diced Raw — no longer used (Sep 2026)
+            '109001', // Cucumber Large English 12 Ct — replaced by 558188 (own row)
+            '129707', // Bag Reclosable 1 Gal 10.5x10.5 — replaced by 214452 (own row)
         ]);
         function isDiscontinued(itemNumber) {
             return !!itemNumber && DISCONTINUED_ITEM_NUMBERS.has(String(itemNumber).trim());
