@@ -1,0 +1,39 @@
+name: Database Backup (nightly, encrypted)
+
+# Every night at 08:15 UTC (3:15am CDT / 2:15am CST), plus manual "Run workflow" from the Actions tab.
+on:
+  schedule:
+    - cron: '15 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install firebase-admin
+        run: npm install --no-save firebase-admin@^12.0.0
+      - name: Export database + rules
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scripts/backup-db.js
+      - name: Encrypt (public cert only; private key is kept off GitHub)
+        run: |
+          STAMP=$(date -u +%Y-%m-%dT%H%M%SZ)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          openssl cms -encrypt -binary -aes256 -stream -outform DER \
+            -in backup.json -out "production-hub-db-$STAMP.json.cms" scripts/backup-public-cert.pem
+          shred -u backup.json
+          ls -l production-hub-db-*.json.cms
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-hub-db-${{ env.STAMP }}
+          path: production-hub-db-*.json.cms
+          retention-days: 30
+          if-no-files-found: error
