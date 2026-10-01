@@ -16,6 +16,6 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           cat > /tmp/payload.json <<'EOF'
-          {"text":":clipboard: *Good morning team!* Time for the weekly Rim inventory count.\n\nPlease walk through the shelves and enter on-hand counts here before end of shift today:\nhttps://zachlutton.github.io/production-hub/weekly-order.html\n\nPIN is 7590. Select \"The Rim\" as the location. Enter what you have on hand for each item — the tool will show what needs to be ordered.\n\nZach places the BEK order tomorrow at 6am, so getting this in by 8pm tonight is critical. Thanks! :muscle:"}
+          {"text":":clipboard: *Good morning team!* Time for the weekly Rim inventory count.\n\nPlease walk through the shelves and enter on-hand counts here before end of shift today:\nhttps://zachlutton.github.io/production-hub/weekly-order.html\n\nLog in with the team PIN (ask Zach in person if you don't have it). Select \"The Rim\" as the location. Enter what you have on hand for each item — the tool will show what needs to be ordered.\n\nZach places the BEK order tomorrow at 6am, so getting this in by 8pm tonight is critical. Thanks! :muscle:"}
           EOF
           curl -sSf -X POST -H 'Content-type: application/json' --data @/tmp/payload.json "$SLACK_WEBHOOK_URL"
