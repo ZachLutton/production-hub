@@ -664,7 +664,7 @@
                 { itemNumber: '176430', name: 'Glove Vinyl Large Black Pf', brand: 'Handgards', pack: '10 / 100 CT', price: 29.44 },
                 { itemNumber: '195176', name: 'Glove Vinyl X-large Blue', brand: 'Safety Zone', pack: '10 / 100 CT', price: 25.58 },
                 { itemNumber: '883711', name: 'Hair Net Beard Protector', brand: 'Disco', pack: '1 / 100 CT', price: 8.30 },
-                { itemNumber: '883710', name: 'Hair Net Dark Brown Light Wgt', brand: 'Disco', pack: '1 / 144 CT', price: 22.09 },
+                { itemNumber: '883710', name: 'Bouffant', brand: 'Disco', pack: '1 / 144 CT', price: 22.09 },
                 { itemNumber: '871289', name: 'Cutlery Teaspoon Blk Mw Bulk', brand: 'Dixie', pack: '1 / 1000 CT', price: 38.75 },
                 { itemNumber: '197236', name: 'Liner Trash 60 Gal Black', brand: 'Essentials', pack: '1 / 100 CT', price: 49.13 },
                 { itemNumber: '157424', name: 'Cover Bun Rack Clear', brand: 'Pinnacle Plastics Inc', pack: '1 / 50 CT', price: 28.56 },
@@ -756,7 +756,7 @@
                 { itemNumber: '206425', name: 'Chicken Tempura', brand: '', pack: '2 / 5 LB', price: 46.98 }
             ],
             'Labeling Station': [
-                { itemNumber: '', name: 'Container Labels', brand: 'House Labels', pack: '1/50 CT', price: 182.50 },
+                { itemNumber: '', name: 'Container Labels', brand: 'House Labels', pack: '1 / 1000 CT', price: 22.35 }, // 1 roll of 1,000 (Oct 2026)
                 { itemNumber: '', name: 'Shipping/Delivery Labels', brand: 'House Labels', pack: '4 Stacks 4X6"', price: 200.09 }
             ]
         };
@@ -858,11 +858,15 @@
             '205589', // Pasta Elbow Macaroni (Bellacibo Primo) — removed at Colonnade (Oct 2026)
             '187911', // Cup Plas Souffle 4 Oz Blk ("4oz Black Cup") — removed at Colonnade (Oct 2026)
             '686012', // Vinegar Red Wine (Heinz 4/1 GAL) — replaced by 184631 Vinegar White Wine (own row, Spice Rack end)
+            '563091', // Kombucha 12 Oz case — replaced by per-can kombucha rows (Oct 2026)
+            '563081', // Kombucha 12 Oz case — replaced by per-can kombucha rows (Oct 2026)
+            '563278', // Kombucha 12 Oz case — replaced by per-can kombucha rows (Oct 2026)
         ]);
         // Items with NO item number can't go in the list above, so they're hidden by exact section + name
         // (only rows whose item # is empty). Same rule: the row stays, it's just not shown or counted.
         const HIDDEN_NAMED_ITEMS = [
             { section: 'Front of House Supplies', name: 'Ready Protein Bar - Variety Pack' }, // removed (Oct 2026)
+            { section: 'Front of House Supplies', name: 'Karma Probiotic water' },  // replaced by per-bottle Karma Water rows (Oct 2026)
         ];
         function sectionIdOf(name) { return String(name).replace(/[^a-zA-Z0-9]/g, '_'); }
         function isHiddenItem(item, sectionId) {
@@ -1529,7 +1533,7 @@
             { itemNumber: '', name: 'Pumpkin Seeds', brand: 'Werner', pack: '1/EA', price: 1.75 },
             { itemNumber: '', name: 'Sunflower Seeds', brand: 'Werner', pack: '1/EA', price: 1.75 },
             // Drinks (Front of House Supplies — there is no "Drinks" section). Kombucha counted per CAN.
-            // PRICE PENDING from Zach: 2.22 = $13.31 per 6 / 12 OZ case (#563278) / 6 cans. Confirm before deploying.
+            // $2.22 per can (confirmed by Zach, Oct 2026). Replaces the hidden 6 / 12 OZ case rows 563091/563081/563278.
             { itemNumber: '', name: 'Kombucha Can - Ginger Nettle', brand: '', pack: '1 / 12 OZ can', price: 2.22 },
             { itemNumber: '', name: 'Kombucha Can - Pure Green', brand: '', pack: '1 / 12 OZ can', price: 2.22 },
             { itemNumber: '', name: 'Kombucha Can - Jasmine', brand: '', pack: '1 / 12 OZ can', price: 2.22 },
@@ -1571,10 +1575,7 @@
             { itemNumber: '793069', fromPack: '4/1gal', pack: '1 / 1 GAL' }, // Honey Pure Blend
             { itemNumber: '793062', fromPack: '4/1gal', pack: '1 / 1 GAL' }, // Syrup Maple Dark
             { itemNumber: '184630', fromPack: '', pack: '2 / 5 LTR' },        // Vinegar Red Wine (Bellacibo Primo)
-            // TODO (ambiguous, NOT active): "Black Hair net" -> "Bouffant". No row is named that; the
-            // candidates at Colonnade are #883710 'Hair Net Dark Brown Light Wgt' and #883711 'Hair Net Beard
-            // Protector'. Uncomment the right one once Zach confirms:
-            // { itemNumber: '883710', fromName: 'Hair Net Dark Brown Light Wgt', name: 'Bouffant' },
+            { itemNumber: '883710', fromName: 'Hair Net Dark Brown Light Wgt', name: 'Bouffant' }, // "Black Hair net" (Zach, Oct 2026)
         ];
         function applyNumberedItemUpdates(data) {
             const norm = v => String(v || '').replace(/\s+/g, '').toLowerCase();
