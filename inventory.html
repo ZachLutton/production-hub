@@ -7,6 +7,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="hub-auth.js?v=1"></script>
     <style>
         * {
             margin: 0;
@@ -1916,51 +1917,28 @@
         });
 
         // ==================== PIN LOGIN ====================
-        const TEAM_PIN = '7590';
-        const LOGIN_KEY = 'zedrics_inv_login';
-        const LOGIN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-
-        function isLoginValid() {
-            try {
-                const stored = localStorage.getItem(LOGIN_KEY);
-                if (!stored) return false;
-                const data = JSON.parse(stored);
-                return data.pin === TEAM_PIN && (Date.now() - data.time) < LOGIN_DURATION;
-            } catch(e) { return false; }
-        }
-
-        function saveLogin() {
-            localStorage.setItem(LOGIN_KEY, JSON.stringify({ pin: TEAM_PIN, time: Date.now() }));
-        }
-
+        // PINs are checked by Firebase (see hub-auth.js); they are not stored in this page.
         function showApp() {
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('main-content').style.display = 'block';
             startApp();
         }
 
-        function handleLogin() {
-            // Sign in anonymously with Firebase Auth
-            firebase.auth().signInAnonymously().then(() => {
-                saveLogin();
-                showApp();
-                console.log('[Inventory] Logged in successfully');
-            }).catch(err => {
-                document.getElementById('pin-error').textContent = 'Login error: ' + err.message;
-                console.error('[Inventory] Auth error:', err);
-            });
-        }
-
-        // PIN input handler
+        // PIN input handler (team or admin PIN)
         document.getElementById('pin-input').addEventListener('input', function() {
+            const input = this;
             document.getElementById('pin-error').textContent = '';
-            if (this.value.length === 4) {
-                if (this.value === TEAM_PIN) {
-                    handleLogin();
-                } else {
-                    document.getElementById('pin-error').textContent = 'Incorrect PIN';
-                    this.value = '';
-                }
+            if (input.value.length === 4) {
+                const pin = input.value;
+                input.disabled = true;
+                HubAuth.signInWithPin(pin).then(() => {
+                    showApp();
+                    console.log('[Inventory] Logged in successfully');
+                }).catch(err => {
+                    document.getElementById('pin-error').textContent = HubAuth.friendlyError(err);
+                    input.value = '';
+                    console.error('[Inventory] Auth error:', err && err.code);
+                }).finally(() => { input.disabled = false; });
             }
         });
 
@@ -1989,20 +1967,15 @@
             console.log('[Inventory] App started, month=' + monthStr + ', location=' + currentLocation);
         }
 
-        // On page load: check if already logged in
+        // On page load: stay logged in for 24h on this device
         function initPage() {
-            if (isLoginValid()) {
-                // Already logged in within 24h — re-authenticate silently
-                firebase.auth().signInAnonymously().then(() => {
+            HubAuth.restore().then(role => {
+                if (role) {
                     showApp();
                     console.log('[Inventory] Auto-login from saved session');
-                }).catch(err => {
-                    // Token expired or error — show login screen
-                    localStorage.removeItem(LOGIN_KEY);
-                    console.error('[Inventory] Auto-login failed:', err);
-                });
-            }
-            // Otherwise login screen is already visible
+                }
+                // Otherwise login screen is already visible
+            });
         }
 
         if (document.readyState === 'loading') {

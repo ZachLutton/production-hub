@@ -9,6 +9,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="hub-auth.js?v=1"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a1a; }
@@ -1551,32 +1552,9 @@ function viewHistoryWeek(weekKey) {
 }
 
 // ==================== PIN LOGIN ====================
-const TEAM_PIN = '7590';
-const ADMIN_PIN = '6895';
-const LOGIN_KEY = 'zedrics_hub_login';
-const LOGIN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-
-function isLoginValid() {
-    try {
-        const stored = localStorage.getItem(LOGIN_KEY);
-        if (!stored) return false;
-        const data = JSON.parse(stored);
-        const validPin = (data.pin === TEAM_PIN || data.pin === ADMIN_PIN);
-        if (validPin && (Date.now() - data.time) < LOGIN_DURATION) {
-            userRole = data.pin === ADMIN_PIN ? 'admin' : 'team';
-            return true;
-        }
-        return false;
-    } catch(e) { return false; }
-}
-
-function saveLogin(pin) {
-    localStorage.setItem(LOGIN_KEY, JSON.stringify({ pin: pin, time: Date.now() }));
-    userRole = pin === ADMIN_PIN ? 'admin' : 'team';
-}
-
+// PINs are checked by Firebase (see hub-auth.js); they are not stored in this page.
 function logout() {
-    localStorage.removeItem(LOGIN_KEY);
+    HubAuth.signOut();
     userRole = 'team';
     moveMode = false;
     selectedDishes = [];
@@ -1593,35 +1571,26 @@ function showApp() {
     init();
 }
 
-function handleLogin(pin) {
-    auth.signInAnonymously().then(() => {
-        saveLogin(pin);
-        showApp();
-    }).catch(err => {
-        document.getElementById('pin-error').textContent = 'Login error: ' + err.message;
-    });
-}
-
 document.getElementById('pin-input').addEventListener('input', function() {
+    const input = this;
     document.getElementById('pin-error').textContent = '';
-    if (this.value.length === 4) {
-        if (this.value === TEAM_PIN || this.value === ADMIN_PIN) {
-            handleLogin(this.value);
-        } else {
-            document.getElementById('pin-error').textContent = 'Incorrect PIN';
-            this.value = '';
-        }
+    if (input.value.length === 4) {
+        const pin = input.value;
+        input.disabled = true;
+        HubAuth.signInWithPin(pin).then(role => {
+            userRole = role;
+            showApp();
+        }).catch(err => {
+            document.getElementById('pin-error').textContent = HubAuth.friendlyError(err);
+            input.value = '';
+        }).finally(() => { input.disabled = false; });
     }
 });
 
-// On page load: check if already logged in within 24h
-if (isLoginValid()) {
-    auth.signInAnonymously().then(() => {
-        showApp();
-    }).catch(() => {
-        localStorage.removeItem(LOGIN_KEY);
-    });
-}
+// On page load: stay logged in for 24h on this device
+HubAuth.restore().then(role => {
+    if (role) { userRole = role; showApp(); }
+});
 </script>
 </body>
 </html>
