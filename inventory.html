@@ -581,14 +581,14 @@
                 { itemNumber: '686223', name: 'Vinegar Rice Wine', brand: 'Roland', pack: '4 / 1 GAL', price: 82.04 }
             ],
             'Spice Rack': [
-                { itemNumber: '696005', name: 'Baking Powder', brand: 'Clabber Girl', pack: '6 / 5 LB', price: 17.66 },
-                { itemNumber: '696131', name: 'Baking Soda', brand: 'Clabber Girl', pack: '6 / 5 LB', price: 6.59 },
+                { itemNumber: '696005', name: 'Baking Powder', brand: 'Clabber Girl', pack: '1 / 5 LB', price: 17.66 },
+                { itemNumber: '696131', name: 'Baking Soda', brand: 'Clabber Girl', pack: '1 / 5 LB', price: 6.59 },
                 { itemNumber: '777034', name: 'Extract Vanilla Pure', brand: 'Mccormick', pack: '1 / 1 QT', price: 84.04 },
                 { itemNumber: '799205', name: 'Cereal Oats Quick', brand: 'Quaker', pack: '12 / 42 OZ', price: 69.64 },
                 { itemNumber: '686207', name: 'Cooking Wine Marsala', brand: 'Roland', pack: '4 / 128 OZ', price: 69.98 },
                 { itemNumber: '686030', name: 'Vinegar Apple Cider', brand: 'Heinz', pack: '4 / 1 GAL', price: 12.61 },
-                { itemNumber: '793069', name: 'Honey Pure Blend', brand: 'Busybee Honey', pack: '4 / 1 GAL', price: 50.65 },
-                { itemNumber: '793062', name: 'Syrup Maple Dark', brand: 'Maple Grove Farms', pack: '4 / 1 GAL', price: 77.75 },
+                { itemNumber: '793069', name: 'Honey Pure Blend', brand: 'Busybee Honey', pack: '1 / 1 GAL', price: 50.65 },
+                { itemNumber: '793062', name: 'Syrup Maple Dark', brand: 'Maple Grove Farms', pack: '1 / 1 GAL', price: 77.75 },
                 { itemNumber: '183640', name: 'Salt Sea Kosher Coarse', brand: 'Ellington Farms', pack: '12 / 3 LB', price: 32.08 },
                 { itemNumber: '113321', name: 'Sauce Bbq Hickory', brand: 'Sweet Baby Ray\'s', pack: '4 / 1 GAL', price: 71.02 },
                 { itemNumber: '660405', name: 'Sauce Buffalo Wing', brand: 'Franks', pack: '4 / 1 GAL', price: 80.20 },
@@ -610,7 +610,10 @@
                 { itemNumber: '137488', name: 'Ginger Ground', brand: 'Mccormick', pack: '1 / 12.5 OZ', price: 18.53 },
                 { itemNumber: '774048', name: 'Coriander Ground', brand: 'Mccormick', pack: '1 / 14 OZ', price: 13.64 },
                 { itemNumber: '686012', name: 'Vinegar Red Wine', brand: 'Heinz', pack: '4 / 1 GAL', price: 14.29 },
-                { itemNumber: '184630', name: 'Vinegar Red Wine', brand: 'Bellacibo Primo', pack: '', price: 30.88 }
+                { itemNumber: '184630', name: 'Vinegar Red Wine', brand: 'Bellacibo Primo', pack: '2 / 5 LTR', price: 30.88 },
+                // Oct 2026: replaces #686012 (kept as a hidden row so its saved counts stay attached).
+                // PRICE TO CONFIRM: carried over from #686012 ($14.29, which was for 4 / 1 GAL Heinz).
+                { itemNumber: '184631', name: 'Vinegar White Wine', brand: '', pack: '2 / 5 LTR', price: 14.29 }
             ],
             'Kitchen Dry Supplies': [
                 { itemNumber: '660333', name: 'Sauce Marinara Rtu', brand: 'Angela Mia', pack: '6 / #10 CAN', price: 66.07 },
@@ -851,7 +854,24 @@
             '129707', // Bag Reclosable 1 Gal 10.5x10.5 — replaced by 214452 (own row)
             '139366', // Salmon Prtn 4oz Sknls Nor — replaced by 219408 (own row, Freezer end)
             '185467', // Cauliflower Hashbrown — replaced by 172359 (own row, Freezer end)
+            '158931', // Cottage Cheese 2% Low Fat — removed at Colonnade (Oct 2026)
+            '205589', // Pasta Elbow Macaroni (Bellacibo Primo) — removed at Colonnade (Oct 2026)
+            '187911', // Cup Plas Souffle 4 Oz Blk ("4oz Black Cup") — removed at Colonnade (Oct 2026)
+            '686012', // Vinegar Red Wine (Heinz 4/1 GAL) — replaced by 184631 Vinegar White Wine (own row, Spice Rack end)
         ]);
+        // Items with NO item number can't go in the list above, so they're hidden by exact section + name
+        // (only rows whose item # is empty). Same rule: the row stays, it's just not shown or counted.
+        const HIDDEN_NAMED_ITEMS = [
+            { section: 'Front of House Supplies', name: 'Ready Protein Bar - Variety Pack' }, // removed (Oct 2026)
+        ];
+        function sectionIdOf(name) { return String(name).replace(/[^a-zA-Z0-9]/g, '_'); }
+        function isHiddenItem(item, sectionId) {
+            if (!item) return false;
+            if (isDiscontinued(item.itemNumber)) return true;
+            if (item.itemNumber && String(item.itemNumber).trim()) return false;
+            const nm = String(item.name || '').trim().toLowerCase();
+            return HIDDEN_NAMED_ITEMS.some(h => sectionIdOf(h.section) === sectionId && h.name.toLowerCase() === nm);
+        }
         function isDiscontinued(itemNumber) {
             return !!itemNumber && DISCONTINUED_ITEM_NUMBERS.has(String(itemNumber).trim());
         }
@@ -861,7 +881,7 @@
             row.className = 'item-row';
             row.setAttribute('data-price', item.price);
             row.setAttribute('data-section', sectionId);
-            if (isDiscontinued(item.itemNumber)) {
+            if (isHiddenItem(item, sectionId)) {
                 // Keep the row in the DOM so positions (and saved-count keys) stay the same
                 row.classList.add('discontinued-row');
                 row.style.display = 'none';
@@ -900,7 +920,7 @@
             headerInfo.className = 'section-header-info';
             headerInfo.innerHTML = `
                 <div class="section-header-title">${sectionName}</div>
-                <div class="section-header-meta" id="meta-${sectionId}">${items.filter(it => !isDiscontinued(it && it.itemNumber)).length} items | Total: $0.00</div>
+                <div class="section-header-meta" id="meta-${sectionId}">${items.filter(it => !isHiddenItem(it, sectionId)).length} items | Total: $0.00</div>
             `;
 
             const toggle = document.createElement('div');
@@ -1045,7 +1065,7 @@
             headerInfo.className = 'section-header-info';
             headerInfo.innerHTML = `
                 <div class="section-header-title">Front of House Meals</div>
-                <div class="section-header-meta" id="meta-meals">${data.length} meals | Total: $0.00</div>
+                <div class="section-header-meta" id="meta-meals">${data.filter(m => !isHiddenMeal(m)).length} meals | Total: $0.00</div>
             `;
 
             const toggle = document.createElement('div');
@@ -1101,9 +1121,43 @@
             container.appendChild(section);
         }
 
+        // Meal counts are keyed by position too (m_<name>_<index>), so removed meals are HIDDEN, not deleted.
+        // Past months still include a hidden meal's saved qty in their totals. Matched case-insensitively.
+        const HIDDEN_MEAL_NAMES = [
+            'Ranch Seasoned Chicken with Mozzarella and Bacon', // Zach: "...Mozzarella & Bacon" (Oct 2026)
+            'Roasted Turkey with Cajun Butter',                 // Oct 2026
+            'Buffalo Chicken Mac',                              // Oct 2026 (Colonnade row is spelled "Buffalo Chicken mac")
+        ];
+        function isHiddenMeal(meal) {
+            const nm = String((meal && meal.name) || '').trim().toLowerCase();
+            return HIDDEN_MEAL_NAMES.some(n => n.toLowerCase() === nm);
+        }
+        // New meals, appended to the END of each location's saved meals list once (by name).
+        const MEAL_ADDITIONS = [
+            { name: 'Chicken with Smoked Mozzarella Penne and Broccolini', price: 3.43 },
+            { name: 'Orange Chicken with A Warm Edamame Salad', price: 2.17 },
+            { name: 'Greek Chicken 1/2#', price: 3.46 },
+        ];
+        function applyMealAdditions(meals) {
+            const names = new Set(meals.filter(Boolean).map(m => String(m.name || '').trim().toLowerCase()));
+            let changed = false;
+            MEAL_ADDITIONS.forEach(m => {
+                const nm = m.name.trim().toLowerCase();
+                if (names.has(nm)) return;
+                meals.push({ name: m.name, price: m.price });
+                names.add(nm);
+                changed = true;
+            });
+            return changed;
+        }
+
         function createMealRow(meal) {
             const row = document.createElement('tr');
             row.className = 'meal-row';
+            if (isHiddenMeal(meal)) {
+                row.classList.add('discontinued-meal');
+                row.style.display = 'none';
+            }
 
             row.innerHTML = `
                 <td><input type="text" value="${meal.name}" class="meal-input"></td>
@@ -1164,7 +1218,7 @@
             let mealTotal = 0;
             let mealCount = 0;
             document.querySelectorAll('#meals-tbody .meal-row').forEach(row => {
-                mealCount++;
+                if (!row.classList.contains('discontinued-meal')) mealCount++;
                 const inputs = row.querySelectorAll('input[type="number"]');
                 const price = parseFloat(inputs[0].value) || 0;
                 const qty = parseFloat(inputs[1].value) || 0;
@@ -1460,12 +1514,86 @@
                 'Freezer': ['219408', '172359', '206425'],          // BEK special orders; salmon/hashbrown replace 139366/185467
                 'Kitchen Dry Supplies': ['212500'],                 // peanut butter
                 'Front of House Supplies': ['563091', '563081', '563278'], // kombucha x3
+                'Spice Rack': ['184631'],                           // Oct 2026: Vinegar White Wine (replaces hidden 686012)
             },
             rim: {
                 'Plating Team Supplies': ['161647'],                // replaces discontinued blue XL glove 195176
                 'Front of House Supplies': ['563091', '563081', '563278'], // kombucha x3
             },
         };
+        // New items WITHOUT a BEK item number (can't come from INVENTORY_DATA by number). Appended to the END
+        // of the section, once, only if no row in that section already has the same name with an empty item #.
+        // Their saved-count key is built from the NAME, so never rename these rows after they go live.
+        const SNACK_DRINK_ADDS_OCT_2026 = [
+            // Snacks (Front of House Supplies — there is no "Snacks" section)
+            { itemNumber: '', name: 'Pumpkin Seeds', brand: 'Werner', pack: '1/EA', price: 1.75 },
+            { itemNumber: '', name: 'Sunflower Seeds', brand: 'Werner', pack: '1/EA', price: 1.75 },
+            // Drinks (Front of House Supplies — there is no "Drinks" section). Kombucha counted per CAN.
+            // PRICE PENDING from Zach: 2.22 = $13.31 per 6 / 12 OZ case (#563278) / 6 cans. Confirm before deploying.
+            { itemNumber: '', name: 'Kombucha Can - Ginger Nettle', brand: '', pack: '1 / 12 OZ can', price: 2.22 },
+            { itemNumber: '', name: 'Kombucha Can - Pure Green', brand: '', pack: '1 / 12 OZ can', price: 2.22 },
+            { itemNumber: '', name: 'Kombucha Can - Jasmine', brand: '', pack: '1 / 12 OZ can', price: 2.22 },
+            { itemNumber: '', name: 'Kombucha Can - Ashwaganda', brand: '', pack: '1 / 12 OZ can', price: 2.22 },
+            // Karma Water counted per BOTTLE: case of 12 = $16.98 -> $1.415 each (page shows $1.42; math uses 1.415)
+            { itemNumber: '', name: 'Karma Water - Pineapple', brand: 'Karma', pack: '1/EA bottle', price: 1.415 },
+            { itemNumber: '', name: 'Karma Water - Berry Cherry', brand: 'Karma', pack: '1/EA bottle', price: 1.415 },
+            { itemNumber: '', name: 'Karma Water - Blueberry Lemonade', brand: 'Karma', pack: '1/EA bottle', price: 1.415 },
+        ];
+        const LOCATION_NAMED_ADDITIONS = {
+            main: { 'Front of House Supplies': SNACK_DRINK_ADDS_OCT_2026 },
+            rim:  { 'Front of House Supplies': SNACK_DRINK_ADDS_OCT_2026 },
+        };
+        function applyLocationNamedAdditions(loc, data) {
+            const adds = LOCATION_NAMED_ADDITIONS[loc];
+            if (!adds) return false;
+            let changed = false;
+            Object.keys(adds).forEach(sec => {
+                if (!Array.isArray(data[sec])) { console.warn('[Inventory] Section missing at', loc, ':', sec); return; }
+                const names = new Set(data[sec].filter(it => it && !(it.itemNumber && String(it.itemNumber).trim()))
+                    .map(it => String(it.name || '').trim().toLowerCase()));
+                adds[sec].forEach(item => {
+                    const nm = item.name.trim().toLowerCase();
+                    if (names.has(nm)) return;
+                    data[sec].push(JSON.parse(JSON.stringify(item)));
+                    names.add(nm);
+                    changed = true;
+                });
+            });
+            return changed;
+        }
+
+        // One-time in-place pack/name fixes for saved rows that HAVE an item number (price sync only touches
+        // price). Matches item # and, if given, the OLD pack/name so it runs once and never overrides a later
+        // edit. Item # (part of the saved-count key) is never changed, so counts stay attached.
+        const NUMBERED_ITEM_UPDATES = [
+            { itemNumber: '696005', fromPack: '6/5lb', pack: '1 / 5 LB' },   // Baking Powder
+            { itemNumber: '696131', fromPack: '6/5lb', pack: '1 / 5 LB' },   // Baking Soda
+            { itemNumber: '793069', fromPack: '4/1gal', pack: '1 / 1 GAL' }, // Honey Pure Blend
+            { itemNumber: '793062', fromPack: '4/1gal', pack: '1 / 1 GAL' }, // Syrup Maple Dark
+            { itemNumber: '184630', fromPack: '', pack: '2 / 5 LTR' },        // Vinegar Red Wine (Bellacibo Primo)
+            // TODO (ambiguous, NOT active): "Black Hair net" -> "Bouffant". No row is named that; the
+            // candidates at Colonnade are #883710 'Hair Net Dark Brown Light Wgt' and #883711 'Hair Net Beard
+            // Protector'. Uncomment the right one once Zach confirms:
+            // { itemNumber: '883710', fromName: 'Hair Net Dark Brown Light Wgt', name: 'Bouffant' },
+        ];
+        function applyNumberedItemUpdates(data) {
+            const norm = v => String(v || '').replace(/\s+/g, '').toLowerCase();
+            let changed = false;
+            Object.values(data).forEach(arr => (arr || []).forEach(it => {
+                if (!it || !it.itemNumber) return;
+                NUMBERED_ITEM_UPDATES.forEach(u => {
+                    if (String(it.itemNumber).trim() !== u.itemNumber) return;
+                    if (u.pack !== undefined && 'fromPack' in u && norm(it.pack) === norm(u.fromPack) && it.pack !== u.pack) {
+                        it.pack = u.pack; changed = true;
+                    }
+                    if (u.name !== undefined && 'fromName' in u && String(it.name || '').trim() === u.fromName) {
+                        it.name = u.name; changed = true;
+                    }
+                });
+            }));
+            return changed;
+        }
+
         function applyLocationAdditions(loc, data) {
             const adds = LOCATION_ADDITIONS[loc];
             if (!adds) return false;
@@ -1526,9 +1654,11 @@
             const pricesChanged = syncPricesFromConstant(data);
             const itemsAdded = applyLocationAdditions(loc, data);
             const namedUpdated = applyNamedItemUpdates(data);
-            if (pricesChanged || itemsAdded || namedUpdated) {
+            const namedAdded = applyLocationNamedAdditions(loc, data);
+            const numberedUpdated = applyNumberedItemUpdates(data);
+            if (pricesChanged || itemsAdded || namedUpdated || namedAdded || numberedUpdated) {
                 await locationItemsRef(loc).set(escapeItemsForFirebase(data));
-                console.log('[Inventory] Saved items list for', loc, { pricesChanged, itemsAdded, namedUpdated });
+                console.log('[Inventory] Saved items list for', loc, { pricesChanged, itemsAdded, namedUpdated, namedAdded, numberedUpdated });
             }
             return data;
         }
@@ -1539,6 +1669,12 @@
             if (!data) {
                 await locationMealsRef(loc).set(MEALS_DATA);
                 return JSON.parse(JSON.stringify(MEALS_DATA));
+            }
+            // Firebase may hand back an array-like object; keep positions exactly as saved.
+            if (!Array.isArray(data)) data = Object.keys(data).sort((a, b) => a - b).map(k => data[k]);
+            if (applyMealAdditions(data)) {
+                await locationMealsRef(loc).set(data);
+                console.log('[Inventory] Appended new meals for', loc);
             }
             return data;
         }
