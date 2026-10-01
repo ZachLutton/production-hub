@@ -112,6 +112,9 @@
             margin-top: 30px; font-size: 13px;
         }
     </style>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="hub-auth.js?v=1"></script>
 </head>
 <body>
     <!-- LOGIN SCREEN -->
@@ -173,27 +176,19 @@
     </div>
 
     <script>
-        const TEAM_PIN = '7590';
-        const ADMIN_PIN = '6895';
-        const LOGIN_KEY = 'zedrics_dash_login';
-        const LOGIN_DURATION = 24 * 60 * 60 * 1000;
+        // PINs are checked by Firebase (see hub-auth.js); they are not stored in this page.
+        firebase.initializeApp({
+            apiKey: "AIzaSyDUveUlxrNDIU4yDUpbzjv8-X625S-l0Po",
+            authDomain: "zedrics-production-hub.firebaseapp.com",
+            databaseURL: "https://zedrics-production-hub-default-rtdb.firebaseio.com",
+            projectId: "zedrics-production-hub",
+            storageBucket: "zedrics-production-hub.firebasestorage.app",
+            messagingSenderId: "1000819775934",
+            appId: "1:1000819775934:web:6a0f14f54f797b092841ef"
+        });
 
-        function readLogin() {
-            try {
-                const stored = localStorage.getItem(LOGIN_KEY);
-                if (!stored) return null;
-                const data = JSON.parse(stored);
-                if ((Date.now() - data.time) >= LOGIN_DURATION) return null;
-                if (data.pin !== TEAM_PIN && data.pin !== ADMIN_PIN) return null;
-                return data;
-            } catch(e) { return null; }
-        }
-        function saveLogin(pin) {
-            localStorage.setItem(LOGIN_KEY, JSON.stringify({pin: pin, time: Date.now()}));
-        }
         function logout() {
-            localStorage.removeItem(LOGIN_KEY);
-            location.reload();
+            HubAuth.signOut().then(() => location.reload());
         }
 
         function showApp(role) {
@@ -212,26 +207,24 @@
         }
 
         document.getElementById('pin-input').addEventListener('input', function() {
+            const input = this;
             document.getElementById('pin-error').textContent = '';
-            if (this.value.length === 4) {
-                if (this.value === ADMIN_PIN) {
-                    saveLogin(ADMIN_PIN);
-                    showApp('admin');
-                } else if (this.value === TEAM_PIN) {
-                    saveLogin(TEAM_PIN);
-                    showApp('team');
-                } else {
-                    document.getElementById('pin-error').textContent = 'Incorrect PIN';
-                    this.value = '';
-                }
+            if (input.value.length === 4) {
+                const pin = input.value;
+                input.disabled = true;
+                HubAuth.signInWithPin(pin).then(role => {
+                    showApp(role);
+                }).catch(err => {
+                    document.getElementById('pin-error').textContent = HubAuth.friendlyError(err);
+                    input.value = '';
+                }).finally(() => { input.disabled = false; });
             }
         });
 
-        // Auto-login if session valid
-        const existing = readLogin();
-        if (existing) {
-            showApp(existing.pin === ADMIN_PIN ? 'admin' : 'team');
-        }
+        // Auto-login if this device is still signed in (24h)
+        HubAuth.restore().then(role => {
+            if (role) showApp(role);
+        });
     </script>
 </body>
 </html>
