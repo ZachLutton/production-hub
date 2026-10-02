@@ -403,6 +403,7 @@ function isBlankTemplateData(data) {
 
 function syncToFirebase() {
   if (isRemoteUpdate) return;
+  if (!productionDataLoaded) { console.warn('BLOCKED: write skipped — live production data not loaded yet'); return; }
   // SAFEGUARD: Never push blank template data to Firebase — this prevents the local HTML
   // file from accidentally overwriting the team's real production data
   if (isBlankTemplateData(PRODUCTION_DATA)) {
@@ -418,6 +419,7 @@ function syncToFirebase() {
 // Field-level sync: only writes the specific field that changed (prevents concurrent edit conflicts)
 function syncFieldToFirebase(day, station, dishIndex, field, value) {
   if (isRemoteUpdate) return;
+  if (!productionDataLoaded) { console.warn('BLOCKED: write skipped — live production data not loaded yet'); return; }
   const safeDay = day.replace(/\//g, '-');
   const path = `${safeDay}/${station}/dishes/${dishIndex}/${field}`;
   dataRef.child(path).set(value);
@@ -426,6 +428,7 @@ function syncFieldToFirebase(day, station, dishIndex, field, value) {
 // Dish-level sync: writes an entire dish object (used after structural changes to a single dish)
 function syncDishToFirebase(day, station, dishIndex) {
   if (isRemoteUpdate) return;
+  if (!productionDataLoaded) { console.warn('BLOCKED: write skipped — live production data not loaded yet'); return; }
   const safeDay = day.replace(/\//g, '-');
   const dish = PRODUCTION_DATA[day][station].dishes[dishIndex];
   if (!dish) return;
@@ -555,8 +558,11 @@ function fixFirebaseArrays(data) {
 let lastKnownWeekKey = null;
 let dishLibrarySeeded = false;
 
-// Listen for real-time changes from other devices
-dataRef.on('value', (snapshot) => {
+// Listen for real-time changes from other devices.
+// Attached only AFTER staff log in (see showApp). Under the locked database rules a listener
+// attached before login is refused and never retried, which left the page showing the built-in
+// template week until a reload.
+function onProductionData(snapshot) {
   const remoteData = snapshot.val();
   if (!remoteData) {
     // Firebase is empty — only push local data if it has real team entries (not blank template)
@@ -605,7 +611,19 @@ dataRef.on('value', (snapshot) => {
   if (isNewWeek) {
     setTimeout(applyDishLibrary, 500);
   }
-});
+}
+
+let productionDataLoaded = false;
+function attachProductionListener() {
+  productionDataLoaded = false;
+  dataRef.off('value', onProductionDataGate);
+  dataRef.on('value', onProductionDataGate, err => {
+    console.error('productionData listener stopped:', err && err.code);
+    productionDataLoaded = false;
+    showSaveNotice('Lost connection to production data \u2014 please log in again');
+  });
+}
+function onProductionDataGate(snapshot) { productionDataLoaded = true; onProductionData(snapshot); }
 
 // Connection status indicator
 db.ref('.info/connected').on('value', (snap) => {
@@ -983,6 +1001,7 @@ function updateNotes(day, station, idx, value) {
 
 function updateOperator(day, station, value) {
   value = value.trim();
+  if (!productionDataLoaded) { console.warn('BLOCKED: write skipped — live production data not loaded yet'); return; }
   if (!PRODUCTION_DATA[day] || !PRODUCTION_DATA[day][station]) return;
   PRODUCTION_DATA[day][station].operator = value;
   const safeDay = day.replace(/\//g, '-');
@@ -1554,6 +1573,7 @@ function viewHistoryWeek(weekKey) {
 // ==================== PIN LOGIN ====================
 // PINs are checked by Firebase (see hub-auth.js); they are not stored in this page.
 function logout() {
+    dataRef.off('value', onProductionDataGate);
     HubAuth.signOut();
     userRole = 'team';
     moveMode = false;
@@ -1568,6 +1588,7 @@ function logout() {
 function showApp() {
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('main-content').style.display = 'block';
+    attachProductionListener();
     init();
 }
 
