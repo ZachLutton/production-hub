@@ -87,6 +87,32 @@
   .metric-diff.under { color: #C62828; }
   .metric-diff.neutral { color: #999; }
 
+  /* Carry over unfinished */
+  .dish-row.carry-partial { background: #FFF8E1; box-shadow: inset 4px 0 0 #F9A825; }
+  .dish-row.carry-cont { background: #E3F2FD; box-shadow: inset 4px 0 0 #1565C0; }
+  .carry-badge { display: inline-block; margin-top: 3px; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 10px; line-height: 1.4; }
+  .carry-badge.partial { background: #FFE082; color: #5D4037; }
+  .carry-badge.cont { background: #BBDEFB; color: #0D47A1; }
+  .carry-undo { background: none; border: none; color: #C62828; font-size: 10.5px; font-weight: 700; text-decoration: underline; cursor: pointer; padding: 0 0 0 6px; }
+  .carry-slot { width: 92px; flex-shrink: 0; display: flex; justify-content: center; }
+  .carry-btn { background: #FFF3E0; color: #E65100; border: 1.5px solid #FFB74D; border-radius: 6px; font-size: 11px; font-weight: 700; padding: 5px 7px; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+  .carry-btn:hover { background: #FFE0B2; }
+  .metric-diff.carried { color: #F57F17; }
+  .carry-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 400; justify-content: center; align-items: flex-start; padding-top: 80px; }
+  .carry-overlay.show { display: flex; }
+  .carry-panel { background: white; border-radius: 12px; width: 420px; max-width: 94vw; padding: 18px 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); font-size: 14px; color: #333; }
+  .carry-panel h2 { font-size: 17px; margin-bottom: 4px; color: #E65100; }
+  .carry-panel .carry-dish { font-weight: 700; margin-bottom: 12px; }
+  .carry-panel label { display: block; font-size: 11px; font-weight: 700; color: #777; text-transform: uppercase; margin: 10px 0 3px; }
+  .carry-panel input, .carry-panel select { width: 100%; padding: 8px; border: 1.5px solid #ccc; border-radius: 6px; font-size: 15px; font-family: inherit; }
+  .carry-panel .carry-row { display: flex; gap: 10px; } .carry-panel .carry-row > div { flex: 1; }
+  .carry-summary { margin-top: 14px; padding: 10px; background: #F1F8E9; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+  .carry-error { color: #C62828; font-size: 13px; min-height: 18px; margin-top: 6px; }
+  .carry-actions { display: flex; gap: 10px; margin-top: 12px; }
+  .carry-actions button { flex: 1; padding: 11px; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; border: none; }
+  .carry-actions .carry-cancel { background: #eee; color: #333; }
+  .carry-actions .carry-confirm { background: #E65100; color: white; }
+
   .expand-btn { background: none; border: none; color: #bbb; font-size: 16px; cursor: pointer; padding: 2px 6px; flex-shrink: 0; }
   .expand-btn:hover { color: #1B5E20; }
 
@@ -259,6 +285,27 @@
       <button class="history-close" onclick="closeHistory()">&times;</button>
     </div>
     <div id="historyContent"></div>
+  </div>
+</div>
+<div class="carry-overlay" id="carryOverlay" onclick="if(event.target===this)closeCarryDialog()">
+  <div class="carry-panel" role="dialog" aria-labelledby="carryTitle">
+    <h2 id="carryTitle">Carry over unfinished</h2>
+    <div class="carry-dish" id="carryDishName"></div>
+    <div class="carry-row">
+      <div><label for="carryDone">Plates done today</label><input id="carryDone" type="number" min="1" inputmode="numeric" oninput="updateCarrySummary()"></div>
+      <div><label for="carryStart">Start</label><input id="carryStart" type="text" placeholder="700" oninput="updateCarrySummary()"></div>
+      <div><label for="carryStop">Stop</label><input id="carryStop" type="text" placeholder="830" oninput="updateCarrySummary()"></div>
+    </div>
+    <div class="carry-row">
+      <div><label for="carryDay">Finish on</label><select id="carryDay" onchange="updateCarrySummary()"></select></div>
+      <div><label for="carryStation">Station</label><select id="carryStation" onchange="updateCarrySummary()"></select></div>
+    </div>
+    <div class="carry-summary" id="carrySummary"></div>
+    <div class="carry-error" id="carryError"></div>
+    <div class="carry-actions">
+      <button class="carry-cancel" onclick="closeCarryDialog()">Cancel</button>
+      <button class="carry-confirm" id="carryConfirmBtn" onclick="confirmCarryOver()">Carry over</button>
+    </div>
   </div>
 </div>
 </div><!-- end main-content -->
@@ -512,6 +559,10 @@ function applyDishLibrary() {
   });
 }
 
+// Carry-over link fields (optional; only present on dishes that were carried over).
+// These MUST survive fixFirebaseArrays or a reload would silently drop the links.
+const CARRY_FIELDS = ['carryId', 'carryPart', 'carriedFrom', 'carriedTo', 'fullOrdered', 'carryUndo'];
+
 // Firebase stores arrays as objects with numeric keys — this converts them back
 function fixFirebaseArrays(data) {
   if (!data || typeof data !== 'object') return data;
@@ -538,17 +589,21 @@ function fixFirebaseArrays(data) {
         station.target = 800;
       }
       // Ensure each dish has all expected fields
-      station.dishes = station.dishes.filter(d => d != null).map(d => ({
-        name: d.name || '',
-        addIn: d.addIn || '',
-        guide: d.guide || '',
-        instruction: d.instruction || '',
-        ordered: parseInt(d.ordered) || 0,
-        finalCount: d.finalCount || '',
-        startTime: d.startTime || '',
-        stopTime: d.stopTime || '',
-        notes: d.notes || ''
-      }));
+      station.dishes = station.dishes.filter(d => d != null).map(d => {
+        const out = {
+          name: d.name || '',
+          addIn: d.addIn || '',
+          guide: d.guide || '',
+          instruction: d.instruction || '',
+          ordered: parseInt(d.ordered) || 0,
+          finalCount: d.finalCount || '',
+          startTime: d.startTime || '',
+          stopTime: d.stopTime || '',
+          notes: d.notes || ''
+        };
+        CARRY_FIELDS.forEach(f => { if (d[f] !== undefined && d[f] !== null && d[f] !== '') out[f] = d[f]; });
+        return out;
+      });
     });
   });
   return data;
@@ -699,7 +754,13 @@ function renderTabs() {
 function setView(compact) { compactView = compact; renderTabs(); render(); }
 function switchDay(day) { currentDay = day; renderTabs(); render(); }
 
-function calcPPH(dish) {
+// Wednesday cookies & muffins never count toward plates-per-hour.
+function isExcludedFromPPH(dish, dayName) {
+  return /^Wednesday/i.test(dayName || '') && /cookie|muffin|chews?\b/i.test((dish && dish.name) || '');
+}
+
+function calcPPH(dish, dayName) {
+  if (isExcludedFromPPH(dish, dayName)) return null;
   if (!dish.startTime || !dish.stopTime || !dish.finalCount) return null;
   const start = parseTime(dish.startTime);
   const stop = parseTime(dish.stopTime);
@@ -735,9 +796,10 @@ function parseTime(str) {
   return h * 60 + m;
 }
 
-function getStationPPH(stationData) {
+function getStationPPH(stationData, dayName) {
   let totalPlates = 0, totalMins = 0;
   stationData.dishes.forEach(d => {
+    if (isExcludedFromPPH(d, dayName)) return;
     if (d.startTime && d.stopTime && d.finalCount) {
       const start = parseTime(d.startTime);
       const stop = parseTime(d.stopTime);
@@ -774,7 +836,7 @@ function render() {
     const totalOrdered = stationData.dishes.reduce((s, d) => s + d.ordered, 0);
     const totalTrays = stationData.dishes.reduce((s, d) => s + Math.ceil(d.ordered / 8), 0);
     const totalFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
-    const livePPH = getStationPPH(stationData);
+    const livePPH = getStationPPH(stationData, currentDay);
     const isQueue = stationName === 'Queue';
     const operatorName = stationData.operator || '';
 
@@ -809,7 +871,7 @@ function render() {
     });
 
     // Station footer with average PPH
-    const pphValues = stationData.dishes.map(d => calcPPH(d)).filter(v => v !== null);
+    const pphValues = stationData.dishes.map(d => calcPPH(d, currentDay)).filter(v => v !== null);
     const avgPPH = pphValues.length > 0 ? Math.round(pphValues.reduce((a,b) => a+b, 0) / pphValues.length) : null;
     const totalPans = stationData.dishes.reduce((s, d) => s + Math.floor(d.ordered / 8), 0);
     const totalRemainder = stationData.dishes.reduce((s, d) => s + (d.ordered % 8), 0);
@@ -844,7 +906,7 @@ function createDishRow(dish, idx, stationName) {
   row.dataset.index = idx;
   row.dataset.station = stationName;
 
-  const pph = calcPPH(dish);
+  const pph = calcPPH(dish, currentDay);
   const diff = dish.finalCount ? parseInt(dish.finalCount) - dish.ordered : null;
   let diffClass = 'neutral', diffText = '-';
   if (diff !== null) {
@@ -852,6 +914,15 @@ function createDishRow(dish, idx, stationName) {
     else if (diff < 0) { diffClass = 'under'; diffText = '' + diff; }
     else { diffClass = 'neutral'; diffText = '0'; }
   }
+  // A partial (carried-over) piece isn't "short" — the rest is planned for another day
+  if (dish.carriedTo) { diffClass = 'carried'; diffText = '\u2192' + shortDay(dish.carriedTo); }
+  if (dish.carriedTo) row.classList.add('carry-partial');
+  else if (dish.carriedFrom) row.classList.add('carry-cont');
+  const carryBadge = carryBadgeHTML(dish, currentDay, stationName, idx, !moveMode);
+  // Fixed-width slot on every row keeps the metric columns lined up whether or not the button shows
+  const carryBtn = `<div class="carry-slot">${(!moveMode && canCarryOver(dish))
+    ? `<button class="carry-btn" tabindex="-1" title="Keep today's plates here and finish the rest on another day" onclick="event.stopPropagation();openCarryDialog('${currentDay}','${stationName}',${idx})">Carry over \u21AA</button>`
+    : ''}</div>`;
 
   const sid = stationName.replace(/\s/g, '');
 
@@ -862,6 +933,7 @@ function createDishRow(dish, idx, stationName) {
       <div class="dish-info">
         <div class="dish-name">${dish.name}</div>
         <div class="dish-details">${dish.guide}</div>
+        ${carryBadge}
       </div>
       <div class="dish-metrics">
         <div class="metric-box">
@@ -895,6 +967,7 @@ function createDishRow(dish, idx, stationName) {
           onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'name',this.textContent)">${dish.name}</div>
         <div class="dish-details editable" contenteditable="true" spellcheck="false" tabindex="-1"
           onclick="event.stopPropagation()" onblur="updateDishField('${currentDay}','${stationName}',${idx},'guide',this.textContent)">${dish.guide}</div>
+        ${carryBadge}
       </div>
       <div class="dish-metrics">
         <div class="metric-box">
@@ -917,7 +990,7 @@ function createDishRow(dish, idx, stationName) {
         </div>
         <div class="metric-box">
           <span class="metric-label">Final</span>
-          <input class="metric-input" type="number" placeholder="0" value="${dish.finalCount}"
+          <input class="metric-input" type="number" placeholder="0" value="${dish.finalCount}"${dish.carriedTo ? ' disabled title="Locked: rest was carried over. Undo the carry-over to change."' : ''}
             onclick="event.stopPropagation()" onchange="updateFinal('${currentDay}','${stationName}',${idx},this.value)">
         </div>
         <div class="metric-box">
@@ -934,6 +1007,7 @@ function createDishRow(dish, idx, stationName) {
             onclick="event.stopPropagation()" onblur="updateNotes('${currentDay}','${stationName}',${idx},this.value)">
         </div>
       </div>
+      ${carryBtn}
       <button class="expand-btn" tabindex="-1" onclick="toggleDetail('${sid}',${idx},event)">\u25B6</button>
     `;
   }
@@ -1015,6 +1089,234 @@ function toggleDetail(stationId, idx, event) {
   const btn = event.target;
   el.classList.toggle('show');
   btn.textContent = el.classList.contains('show') ? '\u25BC' : '\u25B6';
+}
+
+// --- Carry over unfinished ---
+// A dish that ran out partway (e.g. waiting on edamame) is split into linked pieces:
+//   piece 1 stays on its original day with the plates actually done (+ that day's times/platers),
+//   piece 2 is created on a later day for the remaining plates.
+// Every piece's `ordered` = the plates that piece is responsible for, so adding up `ordered`
+// across the week still equals the dish's full target (`fullOrdered`) — no double counting.
+// Who may carry over: 'team' (any logged-in staff) or 'admin'. DECISION FOR ZACH.
+const CARRY_OVER_ROLE = 'team';
+let carryCtx = null; // { day, station, idx }
+
+function shortDay(dayLabel) {
+  if (!dayLabel) return '';
+  const m = String(dayLabel).match(/^(\w{3})\w*\s+(\d{1,2})[\/\-](\d{1,2})/);
+  return m ? `${m[1]} ${m[2]}/${m[3]}` : String(dayLabel);
+}
+
+function carryAllowedForRole() {
+  return CARRY_OVER_ROLE === 'team' || userRole === 'admin';
+}
+
+function daysAfter(dayName) {
+  const days = sortedDays();
+  const i = days.indexOf(dayName);
+  return i >= 0 ? days.slice(i + 1) : [];
+}
+
+function canCarryOver(dish) {
+  if (!dish || dish.carriedTo || !carryAllowedForRole()) return false;
+  const ordered = parseInt(dish.ordered) || 0;
+  const done = parseInt(dish.finalCount) || 0;
+  const started = done > 0 || !!dish.startTime;
+  return ordered > 1 && done < ordered && started;
+}
+
+// Locate a piece of a carry chain anywhere in the week (pieces can be moved between stations)
+function findCarryPiece(carryId, part) {
+  for (const day of Object.keys(PRODUCTION_DATA)) {
+    for (const station of Object.keys(PRODUCTION_DATA[day] || {})) {
+      const dishes = (PRODUCTION_DATA[day][station] || {}).dishes || [];
+      for (let i = 0; i < dishes.length; i++) {
+        const d = dishes[i];
+        if (d && d.carryId === carryId && (parseInt(d.carryPart) || 1) === part) return { day, station, idx: i, dish: d };
+      }
+    }
+  }
+  return null;
+}
+
+// Plates done in all earlier pieces of the chain (for the "continued" badge)
+function carryDoneBefore(dish) {
+  let done = 0;
+  for (let p = 1; p < (parseInt(dish.carryPart) || 1); p++) {
+    const piece = findCarryPiece(dish.carryId, p);
+    if (piece) done += parseInt(piece.dish.finalCount) || 0;
+  }
+  return done;
+}
+
+function carryLabelText(d) {
+  if (!d || !d.carryId) return '';
+  const bits = [];
+  if (d.carriedFrom) bits.push(`continued from ${shortDay(d.carriedFrom)}`);
+  if (d.carriedTo) bits.push(`partial ${parseInt(d.finalCount) || 0} of ${d.fullOrdered}, rest -> ${shortDay(d.carriedTo)}`);
+  return bits.length ? ` (${bits.join('; ')})` : '';
+}
+
+function carryBadgeHTML(dish, day, station, idx, interactive) {
+  if (!dish.carryId) return '';
+  let html = '';
+  if (dish.carriedFrom) {
+    const before = carryDoneBefore(dish);
+    html += `<div class="carry-badge cont">\u21AA Continued from ${shortDay(dish.carriedFrom)} \u00B7 ${before} of ${dish.fullOrdered} done there \u00B7 ${dish.ordered} to plate here</div>`;
+  }
+  if (dish.carriedTo) {
+    const next = findCarryPiece(dish.carryId, (parseInt(dish.carryPart) || 1) + 1);
+    const where = next ? `${shortDay(next.day)}${next.station !== station ? ' \u00B7 ' + next.station : ''}` : shortDay(dish.carriedTo);
+    // plates still left after this piece (what this day handed on), not just what the next day kept
+    const remaining = (parseInt(dish.fullOrdered) || 0) - carryDoneBefore(dish) - (parseInt(dish.finalCount) || 0);
+    const undo = interactive && carryAllowedForRole() && next && carryPieceUntouched(next.dish)
+      ? `<button class="carry-undo" onclick="event.stopPropagation();undoCarryOver('${day}','${station}',${idx})">Undo</button>` : '';
+    html += `<div class="carry-badge partial">Partial \u00B7 ${parseInt(dish.finalCount) || 0} plated here \u00B7 ${remaining} continued on ${where}${undo}</div>`;
+  }
+  return html;
+}
+
+function carryPieceUntouched(d) {
+  return !d.finalCount && !d.startTime && !d.stopTime && !d.carriedTo;
+}
+
+function nowHHMM() {
+  const n = new Date();
+  let h = n.getHours(); if (h > 12) h -= 12; if (h === 0) h = 12;
+  return h + ':' + String(n.getMinutes()).padStart(2, '0');
+}
+
+function openCarryDialog(day, station, idx) {
+  const dish = PRODUCTION_DATA[day] && PRODUCTION_DATA[day][station] && PRODUCTION_DATA[day][station].dishes[idx];
+  if (!dish || !canCarryOver(dish)) return;
+  const later = daysAfter(day);
+  if (later.length === 0) {
+    showSaveNotice('Last day of this production week \u2014 carry-over into next week is not supported');
+    return;
+  }
+  carryCtx = { day, station, idx };
+  document.getElementById('carryDishName').textContent = `${dish.name} \u2014 ${dish.ordered} ordered (${shortDay(day)}, ${station})`;
+  document.getElementById('carryDone').value = dish.finalCount || '';
+  document.getElementById('carryStart').value = dish.startTime || '';
+  document.getElementById('carryStop').value = dish.stopTime || nowHHMM();
+  const daySel = document.getElementById('carryDay');
+  daySel.innerHTML = later.map((d, i) => `<option value="${d}">${shortDay(d)}${i === 0 ? ' (next day)' : ''}</option>`).join('');
+  daySel.value = later[0];
+  const stSel = document.getElementById('carryStation');
+  stSel.innerHTML = STATION_ORDER.map(s => `<option value="${s}">${s}${s === station ? ' (same)' : ''}</option>`).join('');
+  stSel.value = STATION_ORDER.includes(station) ? station : 'Queue';
+  document.getElementById('carryError').textContent = '';
+  updateCarrySummary();
+  document.getElementById('carryOverlay').classList.add('show');
+}
+
+function closeCarryDialog() {
+  document.getElementById('carryOverlay').classList.remove('show');
+  carryCtx = null;
+}
+
+function readCarryForm() {
+  const { day, station, idx } = carryCtx;
+  const dish = PRODUCTION_DATA[day][station].dishes[idx];
+  const done = parseInt(document.getElementById('carryDone').value);
+  const start = formatTimeInput(document.getElementById('carryStart').value);
+  const stop = formatTimeInput(document.getElementById('carryStop').value);
+  const toDay = document.getElementById('carryDay').value;
+  const toStation = document.getElementById('carryStation').value;
+  let error = '', warning = '';
+  if (isNaN(done) || done < 1) error = 'Enter how many plates were done today (at least 1).';
+  else if (done >= dish.ordered) error = `Plates done must be less than ${dish.ordered}. If it's finished, just enter the final count.`;
+  // Times never block a carry-over; they only decide whether today's plates show up in PPH.
+  if (!error && (parseTime(start) === null || parseTime(stop) === null || parseTime(stop) <= parseTime(start)))
+    warning = 'Heads up: without a valid start and stop time, today\u2019s plates won\u2019t count toward PPH (you can fix the times on the row later).';
+  return { dish, done, start, stop, toDay, toStation, remaining: dish.ordered - (isNaN(done) ? 0 : done), error, warning };
+}
+
+function updateCarrySummary() {
+  if (!carryCtx) return;
+  const f = readCarryForm();
+  const op = (PRODUCTION_DATA[carryCtx.day][carryCtx.station].operator || '').trim();
+  const opTo = ((PRODUCTION_DATA[f.toDay] || {})[f.toStation] || {}).operator || '';
+  document.getElementById('carrySummary').innerHTML = f.error ? '' :
+    `<b>${f.done}</b> plates stay on <b>${shortDay(carryCtx.day)}</b> (${carryCtx.station}${op ? ', ' + op : ''}) and count toward that day's PPH.<br>` +
+    `<b>${f.remaining}</b> plates move to <b>${shortDay(f.toDay)}</b> (${f.toStation}${opTo ? ', ' + opTo : ''}) as a linked continuation.` +
+    (f.warning ? `<div style="color:#E65100;margin-top:6px;">${f.warning}</div>` : '');
+  document.getElementById('carryError').textContent = f.error;
+  document.getElementById('carryConfirmBtn').disabled = !!f.error;
+  document.getElementById('carryConfirmBtn').style.opacity = f.error ? 0.5 : 1;
+}
+
+// Write only the station dish lists that changed (narrower than a full productionData overwrite)
+function syncStationsToFirebase(pairs) {
+  if (isRemoteUpdate) return Promise.resolve();
+  if (!productionDataLoaded) { console.warn('BLOCKED: carry-over write skipped — live production data not loaded yet'); return Promise.resolve(); }
+  const updates = {};
+  pairs.forEach(([day, station]) => {
+    updates[`${day.replace(/\//g, '-')}/${station}/dishes`] = PRODUCTION_DATA[day][station].dishes;
+  });
+  return dataRef.update(updates);
+}
+
+function carryOverDish(day, station, idx, opts) {
+  const src = PRODUCTION_DATA[day][station].dishes[idx];
+  const { done, start, stop, toDay, toStation } = opts;
+  if (!src || !canCarryOver(src) || !(done >= 1 && done < src.ordered)) return null;
+  if (!daysAfter(day).includes(toDay)) return null;
+  if (!PRODUCTION_DATA[toDay][toStation]) PRODUCTION_DATA[toDay][toStation] = { target: 800, dishes: [] };
+  const remaining = src.ordered - done;
+  const carryId = src.carryId || ('co' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+  const part = parseInt(src.carryPart) || 1;
+  src.carryUndo = { ordered: src.ordered, finalCount: src.finalCount || '', startTime: src.startTime || '', stopTime: src.stopTime || '' };
+  src.carryId = carryId;
+  src.carryPart = part;
+  src.fullOrdered = parseInt(src.fullOrdered) || src.ordered;
+  src.carriedTo = toDay;
+  src.ordered = done;               // this piece is now responsible for exactly what was plated
+  src.finalCount = String(done);
+  src.startTime = start;
+  src.stopTime = stop;
+  const cont = {
+    name: src.name, addIn: src.addIn, guide: src.guide, instruction: src.instruction,
+    ordered: remaining, finalCount: '', startTime: '', stopTime: '', notes: '',
+    carryId, carryPart: part + 1, carriedFrom: day, fullOrdered: src.fullOrdered
+  };
+  PRODUCTION_DATA[toDay][toStation].dishes.push(cont);
+  return syncStationsToFirebase([[day, station], [toDay, toStation]]).then(() => ({ remaining, toDay, toStation }));
+}
+
+function confirmCarryOver() {
+  if (!carryCtx) return;
+  const f = readCarryForm();
+  if (f.error) { document.getElementById('carryError').textContent = f.error; return; }
+  const { day, station, idx } = carryCtx;
+  const p = carryOverDish(day, station, idx, f);
+  closeCarryDialog();
+  render();
+  if (p) p.then(r => showSaveNotice(`${r.remaining} plates carried to ${shortDay(r.toDay)} \u00B7 ${r.toStation}`));
+}
+
+function undoCarryOver(day, station, idx) {
+  const src = PRODUCTION_DATA[day][station].dishes[idx];
+  if (!src || !src.carriedTo || !carryAllowedForRole()) return;
+  const next = findCarryPiece(src.carryId, (parseInt(src.carryPart) || 1) + 1);
+  if (!next) return;
+  if (!carryPieceUntouched(next.dish)) {
+    showSaveNotice(`Can't undo: ${shortDay(next.day)} has already started plating it`);
+    return;
+  }
+  if (!confirm(`Undo carry-over?\n\n${next.dish.ordered} plates will be removed from ${next.day} (${next.station}) and put back on ${day}.`)) return;
+  PRODUCTION_DATA[next.day][next.station].dishes.splice(next.idx, 1);
+  const u = src.carryUndo || {};
+  src.ordered = parseInt(u.ordered) || (src.ordered + next.dish.ordered);
+  src.finalCount = u.finalCount !== undefined ? u.finalCount : src.finalCount;
+  src.startTime = u.startTime !== undefined ? u.startTime : src.startTime;
+  src.stopTime = u.stopTime !== undefined ? u.stopTime : src.stopTime;
+  delete src.carriedTo; delete src.carryUndo;
+  if ((parseInt(src.carryPart) || 1) === 1) { delete src.carryId; delete src.carryPart; delete src.fullOrdered; }
+  const pairs = [[day, station]];
+  if (!(next.day === day && next.station === station)) pairs.push([next.day, next.station]);
+  syncStationsToFirebase(pairs).then(() => showSaveNotice('Carry-over undone'));
+  render();
 }
 
 // --- Move between days ---
@@ -1220,7 +1522,7 @@ function exportPDF() {
 
       const totalOrdered = stationData.dishes.reduce((s, d) => s + d.ordered, 0);
       const totalFinal = stationData.dishes.reduce((s, d) => s + (parseInt(d.finalCount) || 0), 0);
-      const livePPH = getStationPPH(stationData);
+      const livePPH = getStationPPH(stationData, dayName);
 
       const operatorLabel = stationData.operator ? `  —  ${stationData.operator}` : '';
       doc.setFontSize(16);
@@ -1239,13 +1541,14 @@ function exportPDF() {
 
       const headers = [['#', 'Dish', 'Plate Guide', 'Instruction', 'Ordered', 'Trays', 'Start', 'Stop', 'Final', 'PPH', '+/-', 'Notes']];
       const rows = stationData.dishes.map((d, i) => {
-        const pph = calcPPH(d);
+        const pph = calcPPH(d, dayName);
         const diff = d.finalCount ? parseInt(d.finalCount) - d.ordered : null;
         let diffStr = '-';
         if (diff !== null) diffStr = diff > 0 ? '+' + diff : '' + diff;
+        if (d.carriedTo) diffStr = '-> ' + shortDay(d.carriedTo);
         return [
           i + 1,
-          d.name + (d.addIn ? `\n(${d.addIn})` : ''),
+          d.name + (d.addIn ? `\n(${d.addIn})` : '') + carryLabelText(d),
           d.guide,
           d.instruction || '-',
           d.ordered,
@@ -1284,7 +1587,7 @@ function exportPDF() {
       });
 
       // Average PPH row
-      const pdfPphValues = stationData.dishes.map(d => calcPPH(d)).filter(v => v !== null);
+      const pdfPphValues = stationData.dishes.map(d => calcPPH(d, dayName)).filter(v => v !== null);
       const pdfAvgPPH = pdfPphValues.length > 0 ? Math.round(pdfPphValues.reduce((a,b) => a+b, 0) / pdfPphValues.length) : null;
       const finalY = doc.lastAutoTable.finalY || 180;
       doc.setFontSize(11);
@@ -1362,11 +1665,11 @@ function saveWeekToHistory() {
 
     // Pre-compute PPH for each dish
     const snapshotData = JSON.parse(JSON.stringify(sanitizeKeys(fixedData)));
-    Object.values(snapshotData).forEach(dayData => {
+    Object.entries(snapshotData).forEach(([dayName, dayData]) => {
       Object.values(dayData).forEach(stationData => {
         if (stationData && Array.isArray(stationData.dishes)) {
           stationData.dishes.forEach(d => {
-            const pph = calcPPH(d);
+            const pph = calcPPH(d, dayName);
             if (pph !== null) d.storedPPH = pph;
           });
         }
@@ -1504,6 +1807,7 @@ function viewHistoryWeek(weekKey) {
         let totalPlates = 0, totalMins = 0;
         stationData.dishes.forEach(d => {
           let pph = null;
+          if (isExcludedFromPPH(d, dayName)) return;
           if (d.storedPPH !== undefined && d.storedPPH !== null && d.storedPPH !== '') {
             pph = parseInt(d.storedPPH);
           } else if (d.startTime && d.stopTime && d.finalCount) {
@@ -1542,7 +1846,8 @@ function viewHistoryWeek(weekKey) {
 
           // Calculate PPH — use pre-stored value if available, otherwise compute from times
           let pphStr = '-';
-          if (d.storedPPH !== undefined && d.storedPPH !== null && d.storedPPH !== '') {
+          if (isExcludedFromPPH(d, dayName)) { /* Wednesday cookies & muffins: no PPH */ }
+          else if (d.storedPPH !== undefined && d.storedPPH !== null && d.storedPPH !== '') {
             pphStr = '' + d.storedPPH;
           } else if (d.startTime && d.stopTime && d.finalCount) {
             const pphStart = parseTime(String(d.startTime));
@@ -1552,8 +1857,9 @@ function viewHistoryWeek(weekKey) {
             }
           }
 
+          if (d.carriedTo) { diffStr = '&rarr; ' + shortDay(d.carriedTo); diffColor = '#F57F17'; }
           html += `<tr>
-            <td>${d.name}</td>
+            <td>${d.name}${d.carryId ? `<span style="color:#F57F17;font-size:11px;">${carryLabelText(d)}</span>` : ''}</td>
             <td>${d.ordered}</td>
             <td>${d.finalCount || '-'}</td>
             <td style="color:${diffColor}; font-weight:600;">${diffStr}</td>
