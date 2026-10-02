@@ -289,22 +289,18 @@
 </div>
 <div class="carry-overlay" id="carryOverlay" onclick="if(event.target===this)closeCarryDialog()">
   <div class="carry-panel" role="dialog" aria-labelledby="carryTitle">
-    <h2 id="carryTitle">Carry over unfinished</h2>
+    <h2 id="carryTitle">Carry over unfinished (to the Queue)</h2>
     <div class="carry-dish" id="carryDishName"></div>
     <div class="carry-row">
       <div><label for="carryDone">Plates done today</label><input id="carryDone" type="number" min="1" inputmode="numeric" oninput="updateCarrySummary()"></div>
       <div><label for="carryStart">Start</label><input id="carryStart" type="text" placeholder="700" oninput="updateCarrySummary()"></div>
       <div><label for="carryStop">Stop</label><input id="carryStop" type="text" placeholder="830" oninput="updateCarrySummary()"></div>
     </div>
-    <div class="carry-row">
-      <div><label for="carryDay">Finish on</label><select id="carryDay" onchange="updateCarrySummary()"></select></div>
-      <div><label for="carryStation">Station</label><select id="carryStation" onchange="updateCarrySummary()"></select></div>
-    </div>
     <div class="carry-summary" id="carrySummary"></div>
     <div class="carry-error" id="carryError"></div>
     <div class="carry-actions">
       <button class="carry-cancel" onclick="closeCarryDialog()">Cancel</button>
-      <button class="carry-confirm" id="carryConfirmBtn" onclick="confirmCarryOver()">Carry over</button>
+      <button class="carry-confirm" id="carryConfirmBtn" onclick="confirmCarryOver()">Send rest to Queue</button>
     </div>
   </div>
 </div>
@@ -915,7 +911,7 @@ function createDishRow(dish, idx, stationName) {
     else { diffClass = 'neutral'; diffText = '0'; }
   }
   // A partial (carried-over) piece isn't "short" — the rest is planned for another day
-  if (dish.carriedTo) { diffClass = 'carried'; diffText = '\u2192' + shortDay(dish.carriedTo); }
+  if (dish.carriedTo) { diffClass = 'carried'; diffText = '\u2192' + carryDestLabel(dish); }
   if (dish.carriedTo) row.classList.add('carry-partial');
   else if (dish.carriedFrom) row.classList.add('carry-cont');
   const carryBadge = carryBadgeHTML(dish, currentDay, stationName, idx, !moveMode);
@@ -1097,8 +1093,8 @@ function toggleDetail(stationId, idx, event) {
 //   piece 2 is created on a later day for the remaining plates.
 // Every piece's `ordered` = the plates that piece is responsible for, so adding up `ordered`
 // across the week still equals the dish's full target (`fullOrdered`) — no double counting.
-// Who may carry over: 'team' (any logged-in staff) or 'admin'. DECISION FOR ZACH.
-const CARRY_OVER_ROLE = 'team';
+// Who may carry over (and undo): admin only (Zach, 10/2). Team sees the labels but no button.
+const CARRY_OVER_ROLE = 'admin';
 let carryCtx = null; // { day, station, idx }
 
 function shortDay(dayLabel) {
@@ -1106,6 +1102,17 @@ function shortDay(dayLabel) {
   const m = String(dayLabel).match(/^(\w{3})\w*\s+(\d{1,2})[\/\-](\d{1,2})/);
   return m ? `${m[1]} ${m[2]}/${m[3]}` : String(dayLabel);
 }
+
+// carriedTo = "<day>|<station>" of the next piece (kept up to date when an admin moves it)
+function carryDest(d) {
+  const parts = String((d && d.carriedTo) || '').split('|');
+  return { day: parts[0] || '', station: parts[1] || '' };
+}
+function carryDestLabel(d) {
+  const t = carryDest(d);
+  return t.station === 'Queue' ? 'Queue' : shortDay(t.day);
+}
+function dayIndex(dayName) { return sortedDays().indexOf(dayName); }
 
 function carryAllowedForRole() {
   return CARRY_OVER_ROLE === 'team' || userRole === 'admin';
@@ -1153,7 +1160,7 @@ function carryLabelText(d) {
   if (!d || !d.carryId) return '';
   const bits = [];
   if (d.carriedFrom) bits.push(`continued from ${shortDay(d.carriedFrom)}`);
-  if (d.carriedTo) bits.push(`partial ${parseInt(d.finalCount) || 0} of ${d.fullOrdered}, rest -> ${shortDay(d.carriedTo)}`);
+  if (d.carriedTo) bits.push(`partial ${parseInt(d.finalCount) || 0} of ${d.fullOrdered}, rest -> ${carryDest(d).station === 'Queue' ? 'Queue (unassigned)' : shortDay(carryDest(d).day)}`);
   return bits.length ? ` (${bits.join('; ')})` : '';
 }
 
@@ -1162,16 +1169,20 @@ function carryBadgeHTML(dish, day, station, idx, interactive) {
   let html = '';
   if (dish.carriedFrom) {
     const before = carryDoneBefore(dish);
-    html += `<div class="carry-badge cont">\u21AA Continued from ${shortDay(dish.carriedFrom)} \u00B7 ${before} of ${dish.fullOrdered} done there \u00B7 ${dish.ordered} to plate here</div>`;
+    html += station === 'Queue'
+      ? `<div class="carry-badge cont">\u21AA Continued from ${shortDay(dish.carriedFrom)} \u00B7 ${dish.ordered} left \u00B7 ${before} of ${dish.fullOrdered} done there \u00B7 admin to assign</div>`
+      : `<div class="carry-badge cont">\u21AA Continued from ${shortDay(dish.carriedFrom)} \u00B7 ${before} of ${dish.fullOrdered} done there \u00B7 ${dish.ordered} to plate here</div>`;
   }
   if (dish.carriedTo) {
     const next = findCarryPiece(dish.carryId, (parseInt(dish.carryPart) || 1) + 1);
-    const where = next ? `${shortDay(next.day)}${next.station !== station ? ' \u00B7 ' + next.station : ''}` : shortDay(dish.carriedTo);
+    const dest = next ? { day: next.day, station: next.station } : carryDest(dish);
+    const inQueue = dest.station === 'Queue';
+    const where = `${shortDay(dest.day)}${dest.station && dest.station !== station ? ' \u00B7 ' + dest.station : ''}`;
     // plates still left after this piece (what this day handed on), not just what the next day kept
     const remaining = (parseInt(dish.fullOrdered) || 0) - carryDoneBefore(dish) - (parseInt(dish.finalCount) || 0);
     const undo = interactive && carryAllowedForRole() && next && carryPieceUntouched(next.dish)
       ? `<button class="carry-undo" onclick="event.stopPropagation();undoCarryOver('${day}','${station}',${idx})">Undo</button>` : '';
-    html += `<div class="carry-badge partial">Partial \u00B7 ${parseInt(dish.finalCount) || 0} plated here \u00B7 ${remaining} continued on ${where}${undo}</div>`;
+    html += `<div class="carry-badge partial">Partial \u00B7 ${parseInt(dish.finalCount) || 0} plated here \u00B7 ${remaining} ${inQueue ? 'waiting in the Queue for an admin to assign' : 'continued on ' + where}${undo}</div>`;
   }
   return html;
 }
@@ -1199,12 +1210,6 @@ function openCarryDialog(day, station, idx) {
   document.getElementById('carryDone').value = dish.finalCount || '';
   document.getElementById('carryStart').value = dish.startTime || '';
   document.getElementById('carryStop').value = dish.stopTime || nowHHMM();
-  const daySel = document.getElementById('carryDay');
-  daySel.innerHTML = later.map((d, i) => `<option value="${d}">${shortDay(d)}${i === 0 ? ' (next day)' : ''}</option>`).join('');
-  daySel.value = later[0];
-  const stSel = document.getElementById('carryStation');
-  stSel.innerHTML = STATION_ORDER.map(s => `<option value="${s}">${s}${s === station ? ' (same)' : ''}</option>`).join('');
-  stSel.value = STATION_ORDER.includes(station) ? station : 'Queue';
   document.getElementById('carryError').textContent = '';
   updateCarrySummary();
   document.getElementById('carryOverlay').classList.add('show');
@@ -1221,8 +1226,7 @@ function readCarryForm() {
   const done = parseInt(document.getElementById('carryDone').value);
   const start = formatTimeInput(document.getElementById('carryStart').value);
   const stop = formatTimeInput(document.getElementById('carryStop').value);
-  const toDay = document.getElementById('carryDay').value;
-  const toStation = document.getElementById('carryStation').value;
+  const toDay = day, toStation = 'Queue';   // leftovers always wait in this day's Queue for an admin to assign
   let error = '', warning = '';
   if (isNaN(done) || done < 1) error = 'Enter how many plates were done today (at least 1).';
   else if (done >= dish.ordered) error = `Plates done must be less than ${dish.ordered}. If it's finished, just enter the final count.`;
@@ -1236,10 +1240,10 @@ function updateCarrySummary() {
   if (!carryCtx) return;
   const f = readCarryForm();
   const op = (PRODUCTION_DATA[carryCtx.day][carryCtx.station].operator || '').trim();
-  const opTo = ((PRODUCTION_DATA[f.toDay] || {})[f.toStation] || {}).operator || '';
   document.getElementById('carrySummary').innerHTML = f.error ? '' :
     `<b>${f.done}</b> plates stay on <b>${shortDay(carryCtx.day)}</b> (${carryCtx.station}${op ? ', ' + op : ''}) and count toward that day's PPH.<br>` +
-    `<b>${f.remaining}</b> plates move to <b>${shortDay(f.toDay)}</b> (${f.toStation}${opTo ? ', ' + opTo : ''}) as a linked continuation.` +
+    `The other <b>${f.remaining}</b> go to the <b>Queue</b>, still linked to ${shortDay(carryCtx.day)}. ` +
+    `Assign them to a station and day later in the week with <b>Move Dishes</b>.` +
     (f.warning ? `<div style="color:#E65100;margin-top:6px;">${f.warning}</div>` : '');
   document.getElementById('carryError').textContent = f.error;
   document.getElementById('carryConfirmBtn').disabled = !!f.error;
@@ -1261,7 +1265,8 @@ function carryOverDish(day, station, idx, opts) {
   const src = PRODUCTION_DATA[day][station].dishes[idx];
   const { done, start, stop, toDay, toStation } = opts;
   if (!src || !canCarryOver(src) || !(done >= 1 && done < src.ordered)) return null;
-  if (!daysAfter(day).includes(toDay)) return null;
+  if (daysAfter(day).length === 0) return null;            // stays inside this production week
+  if (toDay !== day || toStation !== 'Queue') return null;   // leftovers always go to this day's Queue
   if (!PRODUCTION_DATA[toDay][toStation]) PRODUCTION_DATA[toDay][toStation] = { target: 800, dishes: [] };
   const remaining = src.ordered - done;
   const carryId = src.carryId || ('co' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
@@ -1270,7 +1275,7 @@ function carryOverDish(day, station, idx, opts) {
   src.carryId = carryId;
   src.carryPart = part;
   src.fullOrdered = parseInt(src.fullOrdered) || src.ordered;
-  src.carriedTo = toDay;
+  src.carriedTo = `${toDay}|${toStation}`;
   src.ordered = done;               // this piece is now responsible for exactly what was plated
   src.finalCount = String(done);
   src.startTime = start;
@@ -1292,7 +1297,7 @@ function confirmCarryOver() {
   const p = carryOverDish(day, station, idx, f);
   closeCarryDialog();
   render();
-  if (p) p.then(r => showSaveNotice(`${r.remaining} plates carried to ${shortDay(r.toDay)} \u00B7 ${r.toStation}`));
+  if (p) p.then(r => showSaveNotice(`${r.remaining} plates sent to the Queue \u2014 assign them with Move Dishes`));
 }
 
 function undoCarryOver(day, station, idx) {
@@ -1301,10 +1306,10 @@ function undoCarryOver(day, station, idx) {
   const next = findCarryPiece(src.carryId, (parseInt(src.carryPart) || 1) + 1);
   if (!next) return;
   if (!carryPieceUntouched(next.dish)) {
-    showSaveNotice(`Can't undo: ${shortDay(next.day)} has already started plating it`);
+    showSaveNotice(`Can't undo: ${shortDay(next.day)} ${next.station} has already started plating it`);
     return;
   }
-  if (!confirm(`Undo carry-over?\n\n${next.dish.ordered} plates will be removed from ${next.day} (${next.station}) and put back on ${day}.`)) return;
+  if (!confirm(`Undo carry-over?\n\n${next.dish.ordered} plates will be removed from ${next.station === 'Queue' ? 'the Queue' : next.day + ' (' + next.station + ')'} and put back on ${day} (${station}).`)) return;
   PRODUCTION_DATA[next.day][next.station].dishes.splice(next.idx, 1);
   const u = src.carryUndo || {};
   src.ordered = parseInt(u.ordered) || (src.ordered + next.dish.ordered);
@@ -1398,6 +1403,14 @@ function moveDishesTo(targetDay, targetStation) {
     PRODUCTION_DATA[targetDay][targetStation] = { target: 800, dishes: [] };
   }
 
+  // Carry-over leftovers can only go to their own day or later in the same week
+  const tooEarly = selectedDishes.find(sel => {
+    const d = ((PRODUCTION_DATA[sel.day] || {})[sel.station] || {}).dishes;
+    const dish = d && d[sel.index];
+    return dish && dish.carriedFrom && dayIndex(targetDay) < dayIndex(dish.carriedFrom);
+  });
+  if (tooEarly) { showSaveNotice('A carried-over dish can only go to its own day or later in the week'); return; }
+
   // Group selections by source day+station, then sort by descending index to avoid shifting
   const grouped = {};
   selectedDishes.forEach(sel => {
@@ -1421,6 +1434,12 @@ function moveDishesTo(targetDay, targetStation) {
   });
 
   PRODUCTION_DATA[targetDay][targetStation].dishes.push(...movedDishes);
+  // Keep each moved leftover's link pointing at where it now lives (shown on the original day's row)
+  movedDishes.forEach(d => {
+    if (!d.carryId || (parseInt(d.carryPart) || 1) < 2) return;
+    const prev = findCarryPiece(d.carryId, (parseInt(d.carryPart) || 1) - 1);
+    if (prev && prev.dish.carriedTo) prev.dish.carriedTo = `${targetDay}|${targetStation}`;
+  });
   const count = movedDishes.length;
   selectedDishes = [];
   syncToFirebase(); // Full sync for structural changes
@@ -1545,7 +1564,7 @@ function exportPDF() {
         const diff = d.finalCount ? parseInt(d.finalCount) - d.ordered : null;
         let diffStr = '-';
         if (diff !== null) diffStr = diff > 0 ? '+' + diff : '' + diff;
-        if (d.carriedTo) diffStr = '-> ' + shortDay(d.carriedTo);
+        if (d.carriedTo) diffStr = '-> ' + carryDestLabel(d);
         return [
           i + 1,
           d.name + (d.addIn ? `\n(${d.addIn})` : '') + carryLabelText(d),
@@ -1857,7 +1876,7 @@ function viewHistoryWeek(weekKey) {
             }
           }
 
-          if (d.carriedTo) { diffStr = '&rarr; ' + shortDay(d.carriedTo); diffColor = '#F57F17'; }
+          if (d.carriedTo) { diffStr = '&rarr; ' + carryDestLabel(d); diffColor = '#F57F17'; }
           html += `<tr>
             <td>${d.name}${d.carryId ? `<span style="color:#F57F17;font-size:11px;">${carryLabelText(d)}</span>` : ''}</td>
             <td>${d.ordered}</td>
