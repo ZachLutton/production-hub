@@ -5,6 +5,12 @@
   `team@zedrics-production-hub.firebaseapp.com` (team PIN) and `admin@zedrics-production-hub.firebaseapp.com` (admin PIN).
   Firebase checks it on its servers; the PINs are NOT in any page or in this repo.
 - The account password is `zph-team-` + team PIN, and `zph-admin-` + admin PIN (Firebase needs 6+ characters).
+- The PIN box starts on **Team**: the PIN is checked against the team account only. For the admin PIN, tap
+  **Admin login** under the box first (or open a page with `#admin` at the end of the address, e.g. a bookmark
+  like `.../production-hub/index.html#admin` on Zach's devices). The box never tries a PIN on both accounts, so a
+  correct PIN never counts as a failed sign-in, and a wrong PIN costs one attempt instead of two. The choice is
+  not saved: every page load and every Log out goes back to Team. (An admin PIN typed on Team is refused as
+  "Incorrect PIN" and counts as one failed team attempt, same as any wrong PIN.)
 - A login lasts 24 hours on a device and covers every hub page (dashboard, production, inventory, weekly order).
 - Database rules (`database.rules.json`) only allow those two accounts to read/write. Everyone else, including
   anonymous sign-ins and direct REST requests, is denied.
