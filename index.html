@@ -136,6 +136,16 @@
 
   .save-notice { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1B5E20; color: white; padding: 10px 24px; border-radius: 24px; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.3s; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 200; }
   .save-notice.show { opacity: 1; }
+  /* End-of-production reminder: counted dishes still missing start/stop times. Never blocks anything. */
+  .missing-times { background: #FFF3E0; border: 1.5px solid #FB8C00; color: #5D2E00; border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; font-size: 15px; line-height: 1.4; }
+  .missing-times summary { cursor: pointer; font-weight: 700; list-style: none; }
+  .missing-times summary::-webkit-details-marker { display: none; }
+  .missing-times .mt-more { color: #E65100; text-decoration: underline; font-weight: 600; font-size: 13px; margin-left: 6px; white-space: nowrap; }
+  .missing-times ul { margin: 8px 0 2px 20px; font-size: 14px; }
+  .missing-times li { margin: 2px 0; }
+  .missing-times .mt-st { color: #8D6E63; font-size: 12px; }
+  .day-tab .mt-badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: #FB8C00; color: white; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; vertical-align: middle; }
+  .metric-input.time-input.needs-time { border-color: #FB8C00; background: #FFF3E0; }
   .sync-status { font-size: 10px; opacity: 0.8; margin-top: 1px; }
   .sync-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
   .sync-dot.connected { background: #69F0AE; }
@@ -733,6 +743,7 @@ function renderTabs() {
     const btn = document.createElement('button');
     btn.className = 'day-tab' + (day === currentDay ? ' active' : '');
     btn.textContent = day;
+    btn.dataset.day = day;
     btn.onclick = () => switchDay(day);
     tabsEl.appendChild(btn);
   });
@@ -748,7 +759,7 @@ function renderTabs() {
 }
 
 function setView(compact) { compactView = compact; renderTabs(); render(); }
-function switchDay(day) { currentDay = day; renderTabs(); render(); }
+function switchDay(day) { currentDay = day; missingTimesOpen = false; renderTabs(); render(); }
 
 // Wednesday cookies & muffins never count toward plates-per-hour.
 function isExcludedFromPPH(dish, dayName) {
@@ -758,12 +769,87 @@ function isExcludedFromPPH(dish, dayName) {
 function calcPPH(dish, dayName) {
   if (isExcludedFromPPH(dish, dayName)) return null;
   if (!dish.startTime || !dish.stopTime || !dish.finalCount) return null;
-  const start = parseTime(dish.startTime);
-  const stop = parseTime(dish.stopTime);
+  const mins = pphMinutes(dish.startTime, dish.stopTime);
+  if (mins === null) return null;
+  const count = parseInt(dish.finalCount);
+  if (isNaN(count)) return null;
+  return Math.round((count / mins) * 60);
+}
+
+// Minutes from start to stop, used by every PPH number (dish, station, PDF, history).
+// Times are typed without AM/PM, so a stop earlier than the start means the run went
+// past noon: 12:51 -> 2:28 is 97 minutes (add 12 hours). If adding 12 hours would make
+// the run longer than 6 hours (a typo like 11:09 -> 11:07, or the same time twice),
+// the times don't make sense, so this returns null and PPH shows "-".
+function pphMinutes(startStr, stopStr) {
+  const start = parseTime(startStr == null ? '' : String(startStr));
+  const stop = parseTime(stopStr == null ? '' : String(stopStr));
   if (start === null || stop === null) return null;
   let mins = stop - start;
-  if (mins <= 0) return null;
-  return Math.round((parseInt(dish.finalCount) / mins) * 60);
+  if (mins <= 0) {
+    mins += 12 * 60;
+    if (mins > 6 * 60) return null;
+  }
+  return mins > 0 ? mins : null;
+}
+
+// What's wrong with a counted dish's times, for the floor warning: 'missing', 'bad' or null.
+function timesProblem(dish, dayName) {
+  if (!dish || !dish.finalCount || String(dish.finalCount).trim() === '') return null;
+  if (isExcludedFromPPH(dish, dayName)) return null;
+  const hasStart = !!(dish.startTime && String(dish.startTime).trim());
+  const hasStop = !!(dish.stopTime && String(dish.stopTime).trim());
+  if (!hasStart || !hasStop) return 'missing';
+  return pphMinutes(dish.startTime, dish.stopTime) === null ? 'bad' : null;
+}
+
+// Every counted dish on a day that still has no usable start/stop times (Queue included).
+function dishesMissingTimes(dayName) {
+  const out = [];
+  const dayData = PRODUCTION_DATA[dayName];
+  if (!dayData) return out;
+  sortedStations(dayName).forEach(st => {
+    const sd = dayData[st];
+    if (!sd || !Array.isArray(sd.dishes)) return;
+    sd.dishes.forEach(d => { const p = timesProblem(d, dayName); if (p) out.push({ station: st, name: d.name, problem: p }); });
+  });
+  return out;
+}
+
+// Amber count on each day tab that still has counted dishes without times.
+function updateMissingTimesBadges() {
+  document.querySelectorAll('#dayTabs .day-tab').forEach(btn => {
+    const day = btn.dataset.day;
+    if (!day) return;
+    const n = dishesMissingTimes(day).length;
+    let b = btn.querySelector('.mt-badge');
+    if (n > 0) {
+      if (!b) { b = document.createElement('span'); b.className = 'mt-badge'; btn.appendChild(b); }
+      b.textContent = n;
+      b.title = n + (n === 1 ? ' dish has' : ' dishes have') + ' a final count but no start/stop times';
+    } else if (b) b.remove();
+  });
+}
+
+// Small reminder at the top of the day: which counted dishes still need start/stop times.
+function missingTimesNoticeHTML(dayName) {
+  const list = dishesMissingTimes(dayName);
+  if (list.length === 0) return '';
+  const n = list.length;
+  const items = list.map(x => `<li>${x.name} <span class="mt-st">(${x.station}${x.problem === 'bad' ? ', check times' : ''})</span></li>`).join('');
+  return `<details class="missing-times" id="missingTimesNotice"${missingTimesOpen ? ' open' : ''} ontoggle="missingTimesOpen=this.open">
+    <summary>\u26A0 ${n} ${n === 1 ? 'dish has' : 'dishes have'} a final count but no start/stop times. Add them so plates per hour can be tracked.<span class="mt-more">${missingTimesOpen ? 'Hide' : 'Show'} list</span></summary>
+    <ul>${items}</ul>
+  </details>`;
+}
+let missingTimesOpen = false;
+
+// Shown next to "Save Current Week to History" so whoever archives the week sees what's missing (never blocks the save).
+function weekMissingTimesNote() {
+  let n = 0;
+  try { sortedDays().forEach(day => { n += dishesMissingTimes(day).length; }); } catch (e) { return ''; }
+  if (n === 0) return '';
+  return `<div class="missing-times" style="margin:12px 20px 0;">\u26A0 ${n} counted ${n === 1 ? 'dish' : 'dishes'} this week still ${n === 1 ? 'has' : 'have'} no start/stop times, so ${n === 1 ? 'it' : 'they'} won't get plates per hour. Add the times before saving if you can. You can still save now.</div>`;
 }
 
 function formatTimeInput(value) {
@@ -797,12 +883,11 @@ function getStationPPH(stationData, dayName) {
   stationData.dishes.forEach(d => {
     if (isExcludedFromPPH(d, dayName)) return;
     if (d.startTime && d.stopTime && d.finalCount) {
-      const start = parseTime(d.startTime);
-      const stop = parseTime(d.stopTime);
+      const mins = pphMinutes(d.startTime, d.stopTime);
       const count = parseInt(d.finalCount);
-      if (start !== null && stop !== null && !isNaN(count) && stop > start) {
+      if (mins !== null && !isNaN(count)) {
         totalPlates += count;
-        totalMins += (stop - start);
+        totalMins += mins;
       }
     }
   });
@@ -813,8 +898,10 @@ function getStationPPH(stationData, dayName) {
 function render() {
   const el = document.getElementById('content');
   el.innerHTML = '<div class="instructions">Drag \u2630 to reorder within a station. Use "Move Dishes" to transfer items between days. Enter start/stop times (e.g. 8:30) and final count for auto PPH.</div>';
+  try { updateMissingTimesBadges(); } catch(e) { console.error('Missing-times badge error:', e); }
   const dayData = PRODUCTION_DATA[currentDay];
   if (!dayData) { try { updateMoveBanner(); } catch(e) {} return; }
+  try { el.insertAdjacentHTML('beforeend', missingTimesNoticeHTML(currentDay)); } catch(e) { console.error('Missing-times notice error:', e); }
 
   let hasAnyDishes = false;
   sortedStations(currentDay).forEach(stationName => {
@@ -921,6 +1008,10 @@ function createDishRow(dish, idx, stationName) {
     : ''}</div>`;
 
   const sid = stationName.replace(/\s/g, '');
+  // Counted but no usable times yet: outline the empty/bad time boxes amber (just a cue, never blocks anything)
+  const tProblem = timesProblem(dish, currentDay);
+  const needStart = tProblem && (tProblem === 'bad' || !(dish.startTime && String(dish.startTime).trim())) ? ' needs-time' : '';
+  const needStop = tProblem && (tProblem === 'bad' || !(dish.stopTime && String(dish.stopTime).trim())) ? ' needs-time' : '';
 
   if (moveMode) {
     // In move mode: disable editing, make entire row tappable
@@ -976,12 +1067,12 @@ function createDishRow(dish, idx, stationName) {
         </div>
         <div class="metric-box">
           <span class="metric-label">Start</span>
-          <input class="metric-input time-input" type="text" placeholder="700" value="${dish.startTime}"
+          <input class="metric-input time-input${needStart}" type="text" placeholder="700" value="${dish.startTime}"
             onclick="event.stopPropagation()" onblur="updateTime('${currentDay}','${stationName}',${idx},'startTime',this.value)">
         </div>
         <div class="metric-box">
           <span class="metric-label">Stop</span>
-          <input class="metric-input time-input" type="text" placeholder="830" value="${dish.stopTime}"
+          <input class="metric-input time-input${needStop}" type="text" placeholder="830" value="${dish.stopTime}"
             onclick="event.stopPropagation()" onblur="updateTime('${currentDay}','${stationName}',${idx},'stopTime',this.value)">
         </div>
         <div class="metric-box">
@@ -1231,7 +1322,7 @@ function readCarryForm() {
   if (isNaN(done) || done < 1) error = 'Enter how many plates were done today (at least 1).';
   else if (done >= dish.ordered) error = `Plates done must be less than ${dish.ordered}. If it's finished, just enter the final count.`;
   // Times never block a carry-over; they only decide whether today's plates show up in PPH.
-  if (!error && (parseTime(start) === null || parseTime(stop) === null || parseTime(stop) <= parseTime(start)))
+  if (!error && pphMinutes(start, stop) === null)
     warning = 'Heads up: without a valid start and stop time, today\u2019s plates won\u2019t count toward PPH (you can fix the times on the row later).';
   return { dish, done, start, stop, toDay, toStation, remaining: dish.ordered - (isNaN(done) ? 0 : done), error, warning };
 }
@@ -1703,8 +1794,16 @@ function saveWeekToHistory() {
       data: snapshotData
     };
 
+    // Reminder only (the save above already happened): counted dishes saved without usable times
+    let noTimes = 0;
+    Object.entries(fixedData).forEach(([dayName, dayData]) => {
+      Object.values(dayData || {}).forEach(stationData => {
+        if (stationData && Array.isArray(stationData.dishes)) stationData.dishes.forEach(d => { if (timesProblem(d, dayName)) noTimes++; });
+      });
+    });
     historyRef.child(weekKey).set(historyEntry).then(() => {
-      showSaveNotice('Week saved to history (' + dishesWithFinals + '/' + totalDishes + ' dishes with final counts)');
+      showSaveNotice('Week saved to history (' + dishesWithFinals + '/' + totalDishes + ' dishes with final counts)' +
+        (noTimes ? ' \u2022 ' + noTimes + ' without start/stop times, no PPH for those' : ''));
     });
   });
 }
@@ -1744,7 +1843,7 @@ function loadHistoryList() {
   historyRef.orderByKey().once('value', (snapshot) => {
     const history = snapshot.val();
     if (!history) {
-      content.innerHTML = '<div class="history-empty">No history saved yet.</div><div style="padding: 12px 20px; border-top: 1px solid #e0e0e0;"><button class="btn btn-white" style="width:100%; background:#1B5E20; color:white;" onclick="saveCurrentWeekSnapshot()">Save Current Week to History</button></div>';
+      content.innerHTML = '<div class="history-empty">No history saved yet.</div>' + weekMissingTimesNote() + '<div style="padding: 12px 20px; border-top: 1px solid #e0e0e0;"><button class="btn btn-white" style="width:100%; background:#1B5E20; color:white;" onclick="saveCurrentWeekSnapshot()">Save Current Week to History</button></div>';
       return;
     }
 
@@ -1767,7 +1866,7 @@ function loadHistoryList() {
     html += '</div>';
 
     // Add save current week button
-    html += '<div style="padding: 12px 20px; border-top: 1px solid #e0e0e0;"><button class="btn btn-white" style="width:100%; background:#1B5E20; color:white;" onclick="saveCurrentWeekSnapshot()">Save Current Week to History</button></div>';
+    html += weekMissingTimesNote() + '<div style="padding: 12px 20px; border-top: 1px solid #e0e0e0;"><button class="btn btn-white" style="width:100%; background:#1B5E20; color:white;" onclick="saveCurrentWeekSnapshot()">Save Current Week to History</button></div>';
 
     content.innerHTML = html;
   });
@@ -1827,17 +1926,15 @@ function viewHistoryWeek(weekKey) {
         stationData.dishes.forEach(d => {
           let pph = null;
           if (isExcludedFromPPH(d, dayName)) return;
+          // Station PPH = all plates / all minutes for every dish with usable times (same as the live view),
+          // whether or not the dish also has a storedPPH. (It used to skip dishes with storedPPH.)
+          const mins = (d.startTime && d.stopTime && d.finalCount) ? pphMinutes(d.startTime, d.stopTime) : null;
+          const f = parseInt(d.finalCount);
+          if (mins !== null && !isNaN(f)) { totalPlates += f; totalMins += mins; }
           if (d.storedPPH !== undefined && d.storedPPH !== null && d.storedPPH !== '') {
             pph = parseInt(d.storedPPH);
-          } else if (d.startTime && d.stopTime && d.finalCount) {
-            const s = parseTime(String(d.startTime));
-            const e = parseTime(String(d.stopTime));
-            const f = parseInt(d.finalCount);
-            if (s !== null && e !== null && e > s && !isNaN(f)) {
-              pph = Math.round((f / (e - s)) * 60);
-              totalPlates += f;
-              totalMins += (e - s);
-            }
+          } else if (mins !== null && !isNaN(f)) {
+            pph = Math.round((f / mins) * 60);
           }
           if (pph !== null) pphValues.push(pph);
         });
@@ -1869,10 +1966,9 @@ function viewHistoryWeek(weekKey) {
           else if (d.storedPPH !== undefined && d.storedPPH !== null && d.storedPPH !== '') {
             pphStr = '' + d.storedPPH;
           } else if (d.startTime && d.stopTime && d.finalCount) {
-            const pphStart = parseTime(String(d.startTime));
-            const pphStop = parseTime(String(d.stopTime));
-            if (pphStart !== null && pphStop !== null && pphStop > pphStart) {
-              pphStr = '' + Math.round((final / (pphStop - pphStart)) * 60);
+            const pphMins = pphMinutes(d.startTime, d.stopTime);
+            if (pphMins !== null) {
+              pphStr = '' + Math.round((final / pphMins) * 60);
             }
           }
 
