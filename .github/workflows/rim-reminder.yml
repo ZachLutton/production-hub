@@ -1,10 +1,10 @@
 name: Rim Weekly Order Reminder
 
-# Tuesday 7am Central. Cron is in UTC — 12:00 UTC = 7am CDT (summer).
-# If DST ends (November), bump to '0 13 * * 2' for 7am CST.
+# Tuesday 09:00 UTC (4 AM CDT / 3 AM CST). Scheduled early so GitHub's
+# typical multi-hour delay still lands the Slack post in the morning.
 on:
   schedule:
-    - cron: '0 12 * * 2'
+    - cron: '0 9 * * 2'
   workflow_dispatch:  # allows manual "Run workflow" from the Actions tab
 
 jobs:
